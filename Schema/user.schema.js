@@ -1,0 +1,36 @@
+import mongoose from "mongoose";
+
+const userSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    nickName: { type: String },
+    vendorId: { type: String, unique: true, sparse: true },
+    phoneNo: { type: String, required: true },
+    email: { type: String, required: true },
+    role: {
+      type: String,
+      enum: ["Admin", "SubAdmin", "Vendor"], // Removed leading comma
+      required: true,
+    },
+    address: {
+      addressLine: { type: String },
+      city: { type: String },
+      state: { type: String },
+      pincode: { type: String },
+    },
+    otp: {
+      type: String,
+    },
+    otpExpires: {
+      type: Date,
+    },
+    onboardedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+  },
+  { timestamps: true }
+);
+
+const UserModel = mongoose.model("User", userSchema);
+export default UserModel;
