@@ -9,17 +9,22 @@ const app = express();
 
 app.use(
   cors({
-    origin: "*",
-    // credentials: true,
+    origin: "*", // allow all origins
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"], // allow headers
   })
 );
+
+// Handle preflight requests explicitly
+app.options("*", cors());
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 const port = process.env.PORT || 8080;
 
 app.get("/", (req, res) => {
-  res.send("Welcome to EV App Server");
+  res.send("Welcome to ABC Company App Server");
 });
 
 app.use("/api", router);
