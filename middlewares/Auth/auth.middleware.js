@@ -30,6 +30,7 @@ const jwtAuth = async (req, res, next) => {
       id: payload.id,
       email: payload.email,
       role: payload.role,
+      vendorId: payload.vendorId ? payload.vendorId : null,
     };
     req.user = user;
 
@@ -44,7 +45,10 @@ const jwtAuth = async (req, res, next) => {
         .json({ error: "Unauthorized: Invalid user role." });
     }
 
-    const dbUser = await UserModel.findOne({ _id: payload.id, role: payload.role });
+    const dbUser = await UserModel.findOne({
+      _id: payload.id,
+      role: payload.role,
+    });
 
     // If no user is found in the database with the given ID
     if (!dbUser) {

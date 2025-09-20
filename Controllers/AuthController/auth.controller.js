@@ -35,7 +35,12 @@ class AuthController {
 
       // Generate a JSON Web Token
       const token = jwt.sign(
-        { id: user.id, email: user.email, role: role },
+        {
+          id: user.id,
+          email: user.email,
+          role: role,
+          vendorId: user.vendorId ? user.vendorId : null,
+        },
         process.env.JWT_SECRET
         // { expiresIn: "24h" }
       );
