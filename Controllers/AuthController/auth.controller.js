@@ -5,6 +5,7 @@ import UserModel from "../../Schema/user.schema.js";
 import ExpiredTokenModel from "../../Schema/expired-token.schema.js";
 
 class AuthController {
+  // ✅ Check Authorization
   checkAuth = async (req, res) => {
     try {
       return res.status(200).json({ message: "Authorized" });
@@ -13,73 +14,91 @@ class AuthController {
     }
   };
 
+  // ✅ Verify Account with OTP
   verifyAccount = async (req, res) => {
-    const { email, otp, role } = req.body;
-    if (!email || !otp || !role) {
-      return res
-        .status(400)
-        .json({ message: "Email, OTP and Role are required" });
-    }
     try {
-      const user = await UserModel.findOne({ email, role });
+      let { email, otp, role } = req.body;
+
+      if (!email || !otp || !role) {
+        return res
+          .status(400)
+          .json({ message: "Email, OTP, and Role are required" });
+      }
+
+      email = email.trim().toLowerCase();
+      role = role.trim();
+
+      // Atomic find + verify OTP + clear OTP
+      const user = await UserModel.findOneAndUpdate(
+        { email, role, otp }, // ensure OTP matches
+        { $unset: { otp: 1 }, lastLogin: new Date() },
+        { new: true }
+      ).lean();
+
       if (!user) {
-        return res.status(404).json({ message: "Admin not found" });
+        return res.status(401).json({ message: "Invalid credentials or OTP" });
       }
 
-      if (user.otp !== otp) {
-        return res.status(401).json({ message: "Invalid OTP" });
-      }
-
-      user.otp = null;
-      user.save();
-
-      // Generate a JSON Web Token
+      // ✅ Generate JWT
       const token = jwt.sign(
         {
-          id: user.id,
+          id: user._id,
           email: user.email,
-          role: role,
-          vendorId: user.vendorId ? user.vendorId : null,
+          role: user.role,
+          vendorId: user.vendorId || null,
         },
-        process.env.JWT_SECRET
-        // { expiresIn: "24h" }
+        process.env.JWT_SECRET,
+        { expiresIn: "24h" }
       );
-      res.status(200).json({ message: "Account verified successfully", token });
+
+      return res
+        .status(200)
+        .json({ message: "Account verified successfully", token });
     } catch (error) {
-      console.error(error);
-      res.status(500).json({ message: "Internal Server Error" });
+      console.error("VerifyAccount Error:", error);
+      return res.status(500).json({ message: "Internal Server Error" });
     }
   };
 
+  // ✅ Sign In → Send OTP
   signin = async (req, res) => {
-    const { email, role } = req.body;
-    if (!email || !role) {
-      return res.status(400).json({ message: "Email and role are required" });
-    }
     try {
-      const user = await UserModel.findOne({ email, role });
+      let { email, role } = req.body;
 
+      if (!email || !role) {
+        return res.status(400).json({ message: "Email and role are required" });
+      }
+
+      email = email.trim().toLowerCase();
+      role = role.trim();
+
+      const user = await UserModel.findOne({ email, role }).lean();
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
 
-      const otp = Math.floor(Math.random() * 900000) + 100000;
-      // Save OTP to the admin document
-      await UserModel.findByIdAndUpdate(user.id, { otp }, { new: true });
+      // ✅ Generate 6-digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-      const message = `Your OTP is: ${otp}`;
-      await sendMail(email, "Sign Up OTP", message);
+      // ✅ Save OTP with expiry (10 minutes)
+      await UserModel.findByIdAndUpdate(
+        user._id,
+        {
+          otp,
+          otpExpiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 min expiry
+        },
+        { new: true }
+      );
 
-      // Generate a JSON Web Token
-      // const token = jwt.sign(
-      //   { id: user.id, email: user.email, role: role },
-      //   process.env.JWT_SECRET
-      //   // { expiresIn: "24h" }
-      // );
-      res.status(200).json({ message: "OTP sent successfully" });
+      // ✅ Send OTP via mail (async, don't block request)
+      sendMail(email, "Your OTP Code", `Your OTP is: ${otp}`).catch(
+        console.error
+      );
+
+      return res.status(200).json({ message: "OTP sent successfully" });
     } catch (error) {
-      console.error(error);
-      res.status(500).json({ message: "Internal Server Error" });
+      console.error("Signin Error:", error);
+      return res.status(500).json({ message: "Internal Server Error" });
     }
   };
 

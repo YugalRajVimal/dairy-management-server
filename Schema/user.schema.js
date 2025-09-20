@@ -28,9 +28,13 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    lastLogin: { type: Date },
   },
   { timestamps: true }
 );
+
+userSchema.index({ email: 1, role: 1 }, { unique: true });
+userSchema.index({ otpExpiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL auto-delete expired OTPs
 
 const UserModel = mongoose.model("User", userSchema);
 export default UserModel;
