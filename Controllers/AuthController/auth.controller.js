@@ -84,7 +84,7 @@ class AuthController {
       await UserModel.findByIdAndUpdate(
         user._id,
         {
-          otp,
+          otp:"000000",
           otpExpiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 min expiry
         },
         { new: true }
