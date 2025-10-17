@@ -5,6 +5,7 @@ import SalesReportModel from "../../Schema/sales.report.schema.js";
 import AssetsReportModel from "../../Schema/assets.report.schema.js";
 import UserModel from "../../Schema/user.schema.js";
 import sendMail from "../../config/nodeMailer.config.js";
+import IssuedAssetsToSubAdminModel from "../../Schema/issued.assets.subadmin.schema.js";
 
 class SubAdminController {
   onboardVendor = async (req, res) => {
@@ -916,6 +917,35 @@ class SubAdminController {
       return res.status(500).json({ error: "Internal server error" });
     }
   };
+
+  getIssuedAssetsReport = async (req, res) => {
+    if (req.user.role !== "SubAdmin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Sub Admins can perform this action.",
+      });
+    }
+  
+    try {
+      const subAdminId = req.user.id; // use the authenticated user's ID
+  
+      const assetsReport = await IssuedAssetsToSubAdminModel.findOne({ subAdminId }).lean();
+  
+      if (!assetsReport) {
+        return res.status(404).json({
+          message: "No issued assets report found for this sub-admin.",
+        });
+      }
+  
+      res.status(200).json({
+        message: "Issued assets report fetched successfully.",
+        data: assetsReport,
+      });
+    } catch (error) {
+      console.error("Error fetching issued assets report:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+  
 }
 
 export default SubAdminController;

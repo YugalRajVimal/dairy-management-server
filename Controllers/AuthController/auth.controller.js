@@ -91,9 +91,9 @@ class AuthController {
       );
 
       // ✅ Send OTP via mail (async, don't block request)
-      sendMail(email, "Your OTP Code", `Your OTP is: ${otp}`).catch(
-        console.error
-      );
+      // sendMail(email, "Your OTP Code", `Your OTP is: ${otp}`).catch(
+      //   console.error
+      // );
 
       return res.status(200).json({ message: "OTP sent successfully" });
     } catch (error) {

@@ -66,4 +66,8 @@ subAdminRouter.get("/get-uploaded-assets-report", jwtAuth, (req, res) => {
   subAdminController.getUploadedAssetsReport(req, res);
 });
 
+subAdminRouter.get("/get-issued-assets-report", jwtAuth, (req, res) => {
+  subAdminController.getIssuedAssetsReport(req, res);
+});
+
 export default subAdminRouter;

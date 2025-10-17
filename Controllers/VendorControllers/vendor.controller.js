@@ -43,6 +43,8 @@ class VendorController {
       const vendorId = req.user?.vendorId;
       const { startDate, endDate } = req.query;
 
+      console.log(startDate, endDate);
+
       if (!vendorId) {
         return res
           .status(400)
