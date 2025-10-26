@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const subAdminUsedAssetsSchema = new mongoose.Schema(
+const usedAssetsOfSubAdminSchema = new mongoose.Schema(
   {
     uploadedOn: { type: Date, required: true },
     uploadedBy: {
@@ -13,11 +13,8 @@ const subAdminUsedAssetsSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    stockNo: { type: String },
-    rt: { type: String },
-    duplicate: { type: String },
-    status: { type: String },
-    cStatus: { type: String },
+    rt: { type: Number, default: 0 },
+    duplicate: { type: Number, default: 0 },
     can: { type: Number, default: 0 },
     lid: { type: Number, default: 0 },
     pvc: { type: Number, default: 0 },
@@ -31,14 +28,14 @@ const subAdminUsedAssetsSchema = new mongoose.Schema(
     ews: { type: Number, default: 0 },
     display: { type: Number, default: 0 },
     battery: { type: Number, default: 0 },
-    bond: { type: Number, default: 0 },
-    vspSign: { type: Number, default: 0 },
+    bond: { type: String, default: 0, unique: true },
+    // vspSign: { type: Number, default: 0 },
     history: [
       {
-        stockNo: { type: String, default: "-" },
+        // stockNo: { type: String, default: "-" },
         rt: { type: String, default: "-" },
-        status: { type: String, default: "-" },
-        cStatus: { type: String, default: "-" },
+        // status: { type: String, default: "-" },
+        // cStatus: { type: String, default: "-" },
         can: { type: String, default: "-" },
         lid: { type: String, default: "-" },
         pvc: { type: String, default: "-" },
@@ -53,7 +50,7 @@ const subAdminUsedAssetsSchema = new mongoose.Schema(
         display: { type: String, default: "-" },
         battery: { type: String, default: "-" },
         bond: { type: String, default: "-" },
-        vspSign: { type: String, default: "-" },
+        // vspSign: { type: String, default: "-" },
         changedOn: { type: Date },
       },
     ],
@@ -61,8 +58,8 @@ const subAdminUsedAssetsSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const subAdminUsedAssetsModel = mongoose.model(
-  "Sub-Admin-Used-Assets-Model",
-  subAdminUsedAssetsSchema
+const UsedAssetsOfSubAdminModel = mongoose.model(
+  "Used-Assets-To-Vendor",
+  usedAssetsOfSubAdminSchema
 );
-export default subAdminUsedAssetsModel;
+export default UsedAssetsOfSubAdminModel;

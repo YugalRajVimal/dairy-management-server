@@ -11,8 +11,8 @@ const assetsReportSchema = new mongoose.Schema(
     vlcCode: { type: String, required: true, unique: true },
     srNo: { type: String },
     stockNo: { type: String },
-    rt: { type: String },
-    duplicate: { type: String },
+    rt: { type: Number, default: 0  },
+    duplicate: { type: Number, default: 0  },
     vlcName: { type: String },
     status: { type: String },
     cStatus: { type: String },
@@ -29,7 +29,7 @@ const assetsReportSchema = new mongoose.Schema(
     ews: { type: Number, default: 0 },
     display: { type: Number, default: 0 },
     battery: { type: Number, default: 0 },
-    bond: { type: Number, default: 0 },
+    bond: { type: String, default: 0 },
     vspSign: { type: Number, default: 0 },
     history: [
       {

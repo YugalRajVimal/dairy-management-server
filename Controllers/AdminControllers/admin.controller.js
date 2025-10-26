@@ -1,5 +1,6 @@
 import sendMail from "../../config/nodeMailer.config.js";
 import IssuedAssetsToSubAdminModel from "../../Schema/issued.assets.subadmin.schema.js";
+import UsedAssetsOfSubAdminModel from "../../Schema/used.assets.vendor.schema.js";
 import UserModel from "../../Schema/user.schema.js";
 
 class AdminController {
@@ -224,6 +225,10 @@ class AdminController {
         subAdminId,
       }).lean(); // Return plain JavaScript objects
 
+      const usedAssetsReport = await UsedAssetsOfSubAdminModel.findOne({
+        subAdminId,
+      }).lean();
+
       if (!assetsReport) {
         return res.status(404).json({
           message: "No issued assets report found for this sub-admin.",
@@ -233,6 +238,7 @@ class AdminController {
       res.status(200).json({
         message: "Issued assets report fetched successfully.",
         data: assetsReport,
+        usedAssetsOfSubAdmin:usedAssetsReport
       });
     } catch (error) {
       console.error("Error fetching issued assets report:", error);
@@ -240,22 +246,123 @@ class AdminController {
     }
   };
 
+  // addIssuedAssets = async (req, res) => {
+  //   if (req.user.role !== "Admin") {
+  //     return res.status(403).json({
+  //       message: "Unauthorized: Only Admins can perform this action.",
+  //     });
+  //   }
+
+  //   try {
+  //     const { subAdminId, ...formData } = req.body;
+  //     const { dps, bond } = formData;
+
+  //     if (!subAdminId) {
+  //       return res.status(400).json({ message: "subAdminId is required." });
+  //     }
+
+  //     // Assuming IssuedAssetsToSubAdminModel is imported from "../../Schema/issued.assets.subadmin.schema.js"
+
+  //     // Check if a report already exists for this subAdminId
+  //     const existingReport = await IssuedAssetsToSubAdminModel.findOne({
+  //       subAdminId,
+  //     });
+  //     if (existingReport) {
+  //       return res.status(409).json({
+  //         message:
+  //           "Issued assets report already exists for this sub-admin. Please use update instead.",
+  //       });
+  //     }
+
+  //     let dpsValues = [];
+  //     if (dps) {
+  //       if (typeof dps === "string") {
+  //         dpsValues = dps
+  //           .split(",")
+  //           .map((v) => v.trim())
+  //           .filter((v) => v.length > 0);
+  //       } else if (Array.isArray(dps)) {
+  //         dpsValues = dps
+  //           .map((v) => v.toString().trim())
+  //           .filter((v) => v.length > 0);
+  //       }
+  //     }
+
+  //     if (dpsValues.length > 0) {
+  //       // Get all assets that have some DPS value stored
+  //       const possibleConflicts = await IssuedAssetsToSubAdminModel.find({
+  //         dps: { $exists: true, $ne: "" },
+  //       });
+
+  //       let conflicts = [];
+
+  //       possibleConflicts.forEach((asset) => {
+  //         const assetDpsValues = asset.dps
+  //           .split(",")
+  //           .map((v) => v.trim())
+  //           .filter((v) => v.length > 0);
+
+  //         const overlapping = assetDpsValues.filter((val) =>
+  //           dpsValues.includes(val)
+  //         );
+
+  //         if (overlapping.length > 0) {
+  //           conflicts.push({
+  //             vlcCode: asset.vlcCode,
+  //             existingDps: overlapping,
+  //           });
+  //         }
+  //       });
+
+  //       if (conflicts.length > 0) {
+  //         return res.status(409).json({
+  //           message: "Some DPS values already exist in other Issued asset records.",
+  //           conflicts,
+  //         });
+  //       }
+  //     }
+
+  //     const newAssetReport = new IssuedAssetsToSubAdminModel({
+  //       ...formData,
+  //       subAdminId,
+  //       uploadedOn: new Date(),
+  //       uploadedBy: req.user.id, // Assuming req.user._id is available from jwtAuth
+  //     });
+
+  //     const savedAssetReport = await newAssetReport.save();
+
+  //     res.status(201).json({
+  //       message: "Issued assets added successfully.",
+  //       data: savedAssetReport,
+  //     });
+  //   } catch (error) {
+  //     console.error("Error adding issued assets:", error);
+  //     if (error.code === 11000) {
+  //       // Duplicate key error
+  //       const field = Object.keys(error.keyPattern)[0];
+  //       return res.status(409).json({
+  //         message: `Duplicate value for ${field}: ${error.keyValue[field]}.`,
+  //       });
+  //     }
+  //     res.status(500).json({ message: "Internal Server Error" });
+  //   }
+  // };
+
   addIssuedAssets = async (req, res) => {
     if (req.user.role !== "Admin") {
       return res.status(403).json({
         message: "Unauthorized: Only Admins can perform this action.",
       });
     }
-
+  
     try {
       const { subAdminId, ...formData } = req.body;
-
+      const { dps, bond } = formData;
+  
       if (!subAdminId) {
         return res.status(400).json({ message: "subAdminId is required." });
       }
-
-      // Assuming IssuedAssetsToSubAdminModel is imported from "../../Schema/issued.assets.subadmin.schema.js"
-
+  
       // Check if a report already exists for this subAdminId
       const existingReport = await IssuedAssetsToSubAdminModel.findOne({
         subAdminId,
@@ -266,16 +373,100 @@ class AdminController {
             "Issued assets report already exists for this sub-admin. Please use update instead.",
         });
       }
-
+  
+      // --- Helper function to parse values (string or array) ---
+      const parseValues = (val) => {
+        if (!val) return [];
+        if (typeof val === "string") {
+          return val
+            .split(",")
+            .map((v) => v.trim())
+            .filter((v) => v.length > 0);
+        } else if (Array.isArray(val)) {
+          return val
+            .map((v) => v.toString().trim())
+            .filter((v) => v.length > 0);
+        }
+        return [];
+      };
+  
+      // Parse both dps and bond values
+      const dpsValues = parseValues(dps);
+      const bondValues = parseValues(bond);
+  
+      // --- Check for DPS conflicts ---
+      if (dpsValues.length > 0) {
+        const possibleDpsConflicts = await IssuedAssetsToSubAdminModel.find({
+          dps: { $exists: true, $ne: "" },
+        });
+  
+        let dpsConflicts = [];
+  
+        possibleDpsConflicts.forEach((asset) => {
+          const assetDpsValues = parseValues(asset.dps);
+          const overlapping = assetDpsValues.filter((val) =>
+            dpsValues.includes(val)
+          );
+  
+          if (overlapping.length > 0) {
+            dpsConflicts.push({
+              vlcCode: asset.vlcCode,
+              existingDps: overlapping,
+            });
+          }
+        });
+  
+        if (dpsConflicts.length > 0) {
+          return res.status(409).json({
+            message: "Some DPS values already exist in other issued asset records.",
+            conflicts: dpsConflicts,
+          });
+        }
+      }
+  
+      // --- Check for Bond conflicts (same logic as DPS) ---
+      if (bondValues.length > 0) {
+        const possibleBondConflicts = await IssuedAssetsToSubAdminModel.find({
+          bond: { $exists: true, $ne: "" },
+        });
+  
+        let bondConflicts = [];
+  
+        possibleBondConflicts.forEach((asset) => {
+          const assetBondValues = parseValues(asset.bond);
+          const overlapping = assetBondValues.filter((val) =>
+            bondValues.includes(val)
+          );
+  
+          if (overlapping.length > 0) {
+            bondConflicts.push({
+              vlcCode: asset.vlcCode,
+              existingBond: overlapping,
+            });
+          }
+        });
+  
+        if (bondConflicts.length > 0) {
+          return res.status(409).json({
+            message:
+              "Some Bond values already exist in other issued asset records.",
+            conflicts: bondConflicts,
+          });
+        }
+      }
+  
+      // --- Create new asset report ---
       const newAssetReport = new IssuedAssetsToSubAdminModel({
         ...formData,
+        dps: dpsValues.join(","), // store as comma-separated if needed
+        bond: bondValues.join(","),
         subAdminId,
         uploadedOn: new Date(),
-        uploadedBy: req.user.id, // Assuming req.user._id is available from jwtAuth
+        uploadedBy: req.user.id,
       });
-
+  
       const savedAssetReport = await newAssetReport.save();
-
+  
       res.status(201).json({
         message: "Issued assets added successfully.",
         data: savedAssetReport,
@@ -283,7 +474,6 @@ class AdminController {
     } catch (error) {
       console.error("Error adding issued assets:", error);
       if (error.code === 11000) {
-        // Duplicate key error
         const field = Object.keys(error.keyPattern)[0];
         return res.status(409).json({
           message: `Duplicate value for ${field}: ${error.keyValue[field]}.`,
@@ -292,50 +482,127 @@ class AdminController {
       res.status(500).json({ message: "Internal Server Error" });
     }
   };
-
+  
+  
   updateIssuedAssets = async (req, res) => {
     if (req.user.role !== "Admin") {
       return res.status(403).json({
         message: "Unauthorized: Only Admins can perform this action.",
       });
     }
-
+  
     try {
       const { _id, ...updatedFields } = req.body;
-
+  
       if (!_id) {
         return res
           .status(400)
           .json({ message: "Asset report ID is required for update." });
       }
-
-      // Assuming IssuedAssetsToSubAdminModel is imported from "../../Schema/issued.assets.subadmin.schema.js"
+  
+      // Import the model dynamically (as in your existing setup)
       const IssuedAssetsToSubAdminModel = (
         await import("../../Schema/issued.assets.subadmin.schema.js")
       ).default;
-
-      const existingAssetReport = await IssuedAssetsToSubAdminModel.findById(
-        _id
-      );
-
+  
+      const existingAssetReport = await IssuedAssetsToSubAdminModel.findById(_id);
+  
       if (!existingAssetReport) {
         return res
           .status(404)
           .json({ message: "Issued assets report not found." });
       }
-
-      // Create a history entry with the current values before updating
+  
+      // --- Helper function to normalize comma-separated or array inputs ---
+      const parseValues = (val) => {
+        if (!val) return [];
+        if (typeof val === "string") {
+          return val
+            .split(",")
+            .map((v) => v.trim())
+            .filter((v) => v.length > 0);
+        } else if (Array.isArray(val)) {
+          return val
+            .map((v) => v.toString().trim())
+            .filter((v) => v.length > 0);
+        }
+        return [];
+      };
+  
+      const dpsValues = parseValues(updatedFields.dps);
+      const bondValues = parseValues(updatedFields.bond);
+  
+      // --- Check for DPS conflicts ---
+      if (dpsValues.length > 0) {
+        const possibleDpsConflicts = await IssuedAssetsToSubAdminModel.find({
+          _id: { $ne: _id }, // exclude current record
+          dps: { $exists: true, $ne: "" },
+        });
+  
+        let dpsConflicts = [];
+  
+        possibleDpsConflicts.forEach((asset) => {
+          const assetDpsValues = parseValues(asset.dps);
+          const overlapping = assetDpsValues.filter((val) =>
+            dpsValues.includes(val)
+          );
+  
+          if (overlapping.length > 0) {
+            dpsConflicts.push({
+              vlcCode: asset.vlcCode,
+              existingDps: overlapping,
+            });
+          }
+        });
+  
+        if (dpsConflicts.length > 0) {
+          return res.status(409).json({
+            message: "Some DPS values already exist in other issued asset records.",
+            conflicts: dpsConflicts,
+          });
+        }
+      }
+  
+      // --- Check for Bond conflicts ---
+      if (bondValues.length > 0) {
+        const possibleBondConflicts = await IssuedAssetsToSubAdminModel.find({
+          _id: { $ne: _id }, // exclude current record
+          bond: { $exists: true, $ne: "" },
+        });
+  
+        let bondConflicts = [];
+  
+        possibleBondConflicts.forEach((asset) => {
+          const assetBondValues = parseValues(asset.bond);
+          const overlapping = assetBondValues.filter((val) =>
+            bondValues.includes(val)
+          );
+  
+          if (overlapping.length > 0) {
+            bondConflicts.push({
+              vlcCode: asset.vlcCode,
+              existingBond: overlapping,
+            });
+          }
+        });
+  
+        if (bondConflicts.length > 0) {
+          return res.status(409).json({
+            message:
+              "Some Bond values already exist in other issued asset records.",
+            conflicts: bondConflicts,
+          });
+        }
+      }
+  
+      // --- Build history entry before applying updates ---
       const historyEntry = {
         changedOn: new Date(),
-        srNo: existingAssetReport.srNo || "-",
-        stockNo: existingAssetReport.stockNo || "-",
         rt: existingAssetReport.rt || "-",
-        status: existingAssetReport.status || "-",
-        cStatus: existingAssetReport.cStatus || "-",
-        can: String(existingAssetReport.can || 0), // Convert to String for history
+        can: String(existingAssetReport.can || 0),
         lid: String(existingAssetReport.lid || 0),
         pvc: String(existingAssetReport.pvc || 0),
-        dps: String(existingAssetReport.dps || "-"), // dps is string in main schema, default 0. History default "-".
+        dps: String(existingAssetReport.dps || "-"),
         keyboard: String(existingAssetReport.keyboard || 0),
         printer: String(existingAssetReport.printer || 0),
         charger: String(existingAssetReport.charger || 0),
@@ -345,32 +612,35 @@ class AdminController {
         ews: String(existingAssetReport.ews || 0),
         display: String(existingAssetReport.display || 0),
         battery: String(existingAssetReport.battery || 0),
-        bond: String(existingAssetReport.bond || 0),
-        vspSign: String(existingAssetReport.vspSign || 0),
+        bond: String(existingAssetReport.bond || "-"),
       };
-
+  
       let hasChanges = false;
-
-      // Apply updates and check for changes
+  
+      // --- Apply updates ---
       for (const key in updatedFields) {
-        // Ensure the key is a direct property of the schema and not _id or history itself
         if (
           existingAssetReport.schema.paths[key] &&
           existingAssetReport[key] !== updatedFields[key]
         ) {
-          existingAssetReport[key] = updatedFields[key];
+          // If key is dps or bond, store normalized values (comma-separated)
+          if (key === "dps") {
+            existingAssetReport[key] = dpsValues.join(",");
+          } else if (key === "bond") {
+            existingAssetReport[key] = bondValues.join(",");
+          } else {
+            existingAssetReport[key] = updatedFields[key];
+          }
           hasChanges = true;
         }
       }
-
-      // Only push to history if there were actual changes
+  
       if (hasChanges) {
         existingAssetReport.history.push(historyEntry);
       }
-
-      // Save the updated document
+  
       const updatedAssetReport = await existingAssetReport.save();
-
+  
       res.status(200).json({
         message: "Issued assets updated successfully.",
         data: updatedAssetReport,
@@ -378,7 +648,6 @@ class AdminController {
     } catch (error) {
       console.error("Error updating issued assets:", error);
       if (error.code === 11000) {
-        // Duplicate key error
         const field = Object.keys(error.keyPattern)[0];
         return res.status(409).json({
           message: `Duplicate value for ${field}: ${error.keyValue[field]}.`,
@@ -387,6 +656,7 @@ class AdminController {
       res.status(500).json({ message: "Internal Server Error" });
     }
   };
+  
 }
 
 export default AdminController;

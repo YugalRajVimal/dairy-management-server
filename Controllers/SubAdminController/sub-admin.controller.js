@@ -6,6 +6,7 @@ import AssetsReportModel from "../../Schema/assets.report.schema.js";
 import UserModel from "../../Schema/user.schema.js";
 import sendMail from "../../config/nodeMailer.config.js";
 import IssuedAssetsToSubAdminModel from "../../Schema/issued.assets.subadmin.schema.js";
+import UsedAssetsOfSubAdminModel from "../../Schema/used.assets.vendor.schema.js";
 
 class SubAdminController {
   onboardVendor = async (req, res) => {
@@ -500,6 +501,142 @@ class SubAdminController {
   // controllers/assets.controller.js
 
   // Add or update assets report
+
+  // addAssetsReport = async (req, res) => {
+  //   try {
+  //     const {
+  //       vlcCode,
+  //       srNo,
+  //       stockNo,
+  //       rt,
+  //       duplicate,
+  //       vlcName,
+  //       status,
+  //       cStatus,
+  //       can,
+  //       lid,
+  //       pvc,
+  //       dps,
+  //       keyboard,
+  //       printer,
+  //       charger,
+  //       stripper,
+  //       solar,
+  //       controller,
+  //       ews,
+  //       display,
+  //       battery,
+  //       bond,
+  //       vspSign,
+  //     } = req.body;
+
+  //     if (!vlcCode) {
+  //       return res.status(400).json({ error: "vlcCode is required" });
+  //     }
+
+  //     const uploadedOn = new Date();
+
+  //     // Check if asset already exists
+  //     let existingAsset = await AssetsReportModel.findOne({ vlcCode });
+
+  //     if (existingAsset) {
+  //       return res.status(409).json({
+  //         message:
+  //           "Assets record with this vlcCode already exists. Please edit the existing record.",
+  //         data: existingAsset,
+  //       });
+  //     }
+
+  //     // Normalize DPS field (split by comma, trim spaces)
+  //     let dpsValues = [];
+  //     if (dps) {
+  //       if (typeof dps === "string") {
+  //         dpsValues = dps
+  //           .split(",")
+  //           .map((v) => v.trim())
+  //           .filter((v) => v.length > 0);
+  //       } else if (Array.isArray(dps)) {
+  //         dpsValues = dps
+  //           .map((v) => v.toString().trim())
+  //           .filter((v) => v.length > 0);
+  //       }
+  //     }
+
+  //     if (dpsValues.length > 0) {
+  //       // Get all assets that have some DPS value stored
+  //       const possibleConflicts = await AssetsReportModel.find({
+  //         dps: { $exists: true, $ne: "" },
+  //       });
+
+  //       let conflicts = [];
+
+  //       possibleConflicts.forEach((asset) => {
+  //         const assetDpsValues = asset.dps
+  //           .split(",")
+  //           .map((v) => v.trim())
+  //           .filter((v) => v.length > 0);
+
+  //         const overlapping = assetDpsValues.filter((val) =>
+  //           dpsValues.includes(val)
+  //         );
+
+  //         if (overlapping.length > 0) {
+  //           conflicts.push({
+  //             vlcCode: asset.vlcCode,
+  //             existingDps: overlapping,
+  //           });
+  //         }
+  //       });
+
+  //       if (conflicts.length > 0) {
+  //         return res.status(409).json({
+  //           message: "Some DPS values already exist in other asset records.",
+  //           conflicts,
+  //         });
+  //       }
+  //     }
+
+  //     // If not present, create a new one
+  //     const newAsset = new AssetsReportModel({
+  //       uploadedOn,
+  //       uploadedBy: req.user.id, // assuming `req.user` is populated
+  //       vlcCode,
+  //       srNo,
+  //       stockNo,
+  //       rt,
+  //       duplicate,
+  //       vlcName,
+  //       status,
+  //       cStatus,
+  //       can,
+  //       lid,
+  //       pvc,
+  //       dps,
+  //       keyboard,
+  //       printer,
+  //       charger,
+  //       stripper,
+  //       solar,
+  //       controller,
+  //       ews,
+  //       display,
+  //       battery,
+  //       bond,
+  //       vspSign,
+  //       history: [], // no history initially
+  //     });
+
+  //     await newAsset.save();
+  //     return res.json({
+  //       message: "New assets record created successfully ✅",
+  //       data: newAsset,
+  //     });
+  //   } catch (error) {
+  //     console.error("Error in addAssetsReport:", error);
+  //     return res.status(500).json({ error: "Internal server error" });
+  //   }
+  // };
+
   addAssetsReport = async (req, res) => {
     try {
       const {
@@ -528,15 +665,14 @@ class SubAdminController {
         vspSign,
       } = req.body;
 
-      if (!vlcCode) {
+      const subAdminId = req.user.id;
+      if (!vlcCode)
         return res.status(400).json({ error: "vlcCode is required" });
-      }
 
       const uploadedOn = new Date();
 
       // Check if asset already exists
-      let existingAsset = await AssetsReportModel.findOne({ vlcCode });
-
+      const existingAsset = await AssetsReportModel.findOne({ vlcCode });
       if (existingAsset) {
         return res.status(409).json({
           message:
@@ -545,39 +681,60 @@ class SubAdminController {
         });
       }
 
-      // Normalize DPS field (split by comma, trim spaces)
-      let dpsValues = [];
-      if (dps) {
-        if (typeof dps === "string") {
-          dpsValues = dps
-            .split(",")
-            .map((v) => v.trim())
-            .filter((v) => v.length > 0);
-        } else if (Array.isArray(dps)) {
-          dpsValues = dps
-            .map((v) => v.toString().trim())
-            .filter((v) => v.length > 0);
-        }
+      // Helper to parse comma-separated strings
+      const parseCommaValues = (val) => {
+        if (!val) return [];
+        if (Array.isArray(val)) return val.map((v) => v.trim()).filter(Boolean);
+        return val
+          .split(",")
+          .map((v) => v.trim())
+          .filter((v) => v.length > 0);
+      };
+
+      const dpsValues = parseCommaValues(dps);
+      const bondValues = parseCommaValues(bond);
+
+      // ✅ Step 1: Validate issued assets exist
+      const issuedAssets = await IssuedAssetsToSubAdminModel.findOne({
+        subAdminId,
+      });
+      if (!issuedAssets) {
+        return res.status(400).json({
+          message:
+            "No issued assets found for this sub-admin. Cannot mark as used.",
+        });
       }
 
+      // ✅ Step 2: Validate DPS/BOND exist in issued records
+      const issuedDpsList = parseCommaValues(issuedAssets.dps);
+      const issuedBondList = parseCommaValues(issuedAssets.bond);
+
+      const missingDps = dpsValues.filter(
+        (val) => !issuedDpsList.includes(val)
+      );
+      const missingBonds = bondValues.filter(
+        (val) => !issuedBondList.includes(val)
+      );
+
+      if (missingDps.length > 0 || missingBonds.length > 0) {
+        return res.status(400).json({
+          message: "Some DPS or Bond values are not issued to this sub-admin.",
+          missing: { dps: missingDps, bond: missingBonds },
+        });
+      }
+
+      // ✅ Step 3: DPS conflict check
       if (dpsValues.length > 0) {
-        // Get all assets that have some DPS value stored
         const possibleConflicts = await AssetsReportModel.find({
           dps: { $exists: true, $ne: "" },
         });
-
-        let conflicts = [];
+        const conflicts = [];
 
         possibleConflicts.forEach((asset) => {
-          const assetDpsValues = asset.dps
-            .split(",")
-            .map((v) => v.trim())
-            .filter((v) => v.length > 0);
-
+          const assetDpsValues = parseCommaValues(asset.dps);
           const overlapping = assetDpsValues.filter((val) =>
             dpsValues.includes(val)
           );
-
           if (overlapping.length > 0) {
             conflicts.push({
               vlcCode: asset.vlcCode,
@@ -594,10 +751,53 @@ class SubAdminController {
         }
       }
 
-      // If not present, create a new one
+      // ✅ Step 4: Check inventory availability
+      const usedAssets = await UsedAssetsOfSubAdminModel.findOne({
+        subAdminId,
+      });
+      const issued = issuedAssets || {};
+      const used = usedAssets || {};
+
+      const numericFields = [
+        "rt",
+        "duplicate",
+        "can",
+        "lid",
+        "pvc",
+        "keyboard",
+        "printer",
+        "charger",
+        "stripper",
+        "solar",
+        "controller",
+        "ews",
+        "display",
+        "battery",
+      ];
+
+      for (const field of numericFields) {
+        const issuedVal = Number(issued[field] || 0);
+        const usedVal = Number(used[field] || 0);
+        const newVal = Number(req.body[field] || 0);
+
+        const available = issuedVal - usedVal;
+        if (newVal > available) {
+          return res.status(400).json({
+            message: `Not enough ${field.toUpperCase()} assets left in inventory.`,
+            details: {
+              issued: issuedVal,
+              used: usedVal,
+              available,
+              requested: newVal,
+            },
+          });
+        }
+      }
+
+      // ✅ Step 5: Create new asset report
       const newAsset = new AssetsReportModel({
         uploadedOn,
-        uploadedBy: req.user.id, // assuming `req.user` is populated
+        uploadedBy: req.user.id,
         vlcCode,
         srNo,
         stockNo,
@@ -621,12 +821,74 @@ class SubAdminController {
         battery,
         bond,
         vspSign,
-        history: [], // no history initially
+        history: [],
       });
-
       await newAsset.save();
+
+      // ✅ Step 6: Update UsedAssetsOfSubAdminModel
+      if (usedAssets) {
+        usedAssets.history.push({
+          rt: usedAssets.rt,
+          can: usedAssets.can,
+          lid: usedAssets.lid,
+          pvc: usedAssets.pvc,
+          dps: usedAssets.dps,
+          keyboard: usedAssets.keyboard,
+          printer: usedAssets.printer,
+          charger: usedAssets.charger,
+          stripper: usedAssets.stripper,
+          solar: usedAssets.solar,
+          controller: usedAssets.controller,
+          ews: usedAssets.ews,
+          display: usedAssets.display,
+          battery: usedAssets.battery,
+          bond: usedAssets.bond,
+          changedOn: new Date(),
+        });
+
+        numericFields.forEach(
+          (f) => (usedAssets[f] += Number(req.body[f]) || 0)
+        );
+
+        const existingDps = parseCommaValues(usedAssets.dps);
+        const existingBond = parseCommaValues(usedAssets.bond);
+        usedAssets.dps = Array.from(
+          new Set([...existingDps, ...dpsValues])
+        ).join(",");
+        usedAssets.bond = Array.from(
+          new Set([...existingBond, ...bondValues])
+        ).join(",");
+
+        await usedAssets.save();
+      } else {
+        const newUsed = new UsedAssetsOfSubAdminModel({
+          uploadedOn,
+          uploadedBy: req.user.id,
+          subAdminId,
+          rt,
+          duplicate,
+          can,
+          lid,
+          pvc,
+          dps: dpsValues.join(","),
+          keyboard,
+          printer,
+          charger,
+          stripper,
+          solar,
+          controller,
+          ews,
+          display,
+          battery,
+          bond: bondValues.join(","),
+          history: [],
+        });
+        await newUsed.save();
+      }
+
       return res.json({
-        message: "New assets record created successfully ✅",
+        message:
+          "New asset record created and UsedAssets updated successfully ✅",
         data: newAsset,
       });
     } catch (error) {
@@ -636,6 +898,224 @@ class SubAdminController {
   };
 
   // Update existing assets record & push old values into history
+  // updateAssetsReport = async (req, res) => {
+  //   try {
+  //     const {
+  //       vlcCode,
+  //       srNo,
+  //       stockNo,
+  //       rt,
+  //       duplicate,
+  //       vlcName,
+  //       status,
+  //       cStatus,
+  //       can,
+  //       lid,
+  //       pvc,
+  //       dps,
+  //       keyboard,
+  //       printer,
+  //       charger,
+  //       stripper,
+  //       solar,
+  //       controller,
+  //       ews,
+  //       display,
+  //       battery,
+  //       bond,
+  //       vspSign,
+  //     } = req.body;
+
+  //     if (!vlcCode) {
+  //       return res.status(400).json({ error: "vlcCode is required" });
+  //     }
+
+  //     const changedOn = new Date();
+
+  //     // Find the asset
+  //     let existingAsset = await AssetsReportModel.findOne({ vlcCode });
+
+  //     if (!existingAsset) {
+  //       return res.status(404).json({
+  //         message: "Assets record not found. Please create a new record first.",
+  //       });
+  //     }
+
+  //     let isChanged = false;
+
+  //     // Define fields that can be updated and should be checked for changes
+  //     const updatableFields = [
+  //       "srNo",
+  //       "stockNo",
+  //       "rt",
+  //       "duplicate",
+  //       "vlcName",
+  //       "status",
+  //       "cStatus",
+  //       "can",
+  //       "lid",
+  //       "pvc",
+  //       "dps",
+  //       "keyboard",
+  //       "printer",
+  //       "charger",
+  //       "stripper",
+  //       "solar",
+  //       "controller",
+  //       "ews",
+  //       "display",
+  //       "battery",
+  //       "bond",
+  //       "vspSign",
+  //     ];
+
+  //     for (const field of updatableFields) {
+  //       const newValue = req.body[field];
+  //       const existingValue = existingAsset[field];
+
+  //       // Only consider a change if a new value is provided in the request body
+  //       // and it's not null/undefined
+  //       if (newValue !== undefined && newValue !== null) {
+  //         if (typeof existingValue === "number") {
+  //           // For number fields, parse the new value and compare
+  //           const parsedNewValue = parseFloat(newValue);
+  //           // Check if parsedNewValue is a valid number and different from existing
+  //           if (!isNaN(parsedNewValue) && parsedNewValue !== existingValue) {
+  //             isChanged = true;
+  //             break;
+  //           }
+  //         } else {
+  //           // For string fields, trim and compare
+  //           const trimmedNewValue = String(newValue).trim();
+  //           const trimmedExistingValue = String(existingValue || "").trim(); // Ensure existingValue is treated as string, default to empty string if null/undefined
+
+  //           if (trimmedNewValue !== trimmedExistingValue) {
+  //             isChanged = true;
+  //             break;
+  //           }
+  //         }
+  //       }
+  //     }
+
+  //     if (!isChanged) {
+  //       return res.status(400).json({
+  //         message: "No changes detected. Please provide new values to update.",
+  //       });
+  //     }
+
+  //     if (dps) {
+  //       // Normalize DPS field (split by comma, trim spaces)
+  //       let dpsValues = [];
+  //       if (dps) {
+  //         if (typeof dps === "string") {
+  //           dpsValues = dps
+  //             .split(",")
+  //             .map((v) => v.trim())
+  //             .filter((v) => v.length > 0);
+  //         } else if (Array.isArray(dps)) {
+  //           dpsValues = dps
+  //             .map((v) => v.toString().trim())
+  //             .filter((v) => v.length > 0);
+  //         }
+  //       }
+
+  //       if (dpsValues.length > 0) {
+  //         // Get all assets that have some DPS value stored, excluding the current asset being updated
+  //         const possibleConflicts = await AssetsReportModel.find({
+  //           dps: { $exists: true, $ne: "" },
+  //           vlcCode: { $ne: existingAsset.vlcCode }, // Exclude the current asset's vlcCode
+  //         });
+
+  //         let conflicts = [];
+
+  //         possibleConflicts.forEach((asset) => {
+  //           const assetDpsValues = asset.dps
+  //             .split(",")
+  //             .map((v) => v.trim())
+  //             .filter((v) => v.length > 0);
+
+  //           const overlapping = assetDpsValues.filter((val) =>
+  //             dpsValues.includes(val)
+  //           );
+
+  //           if (overlapping.length > 0) {
+  //             conflicts.push({
+  //               vlcCode: asset.vlcCode,
+  //               existingDps: overlapping,
+  //             });
+  //           }
+  //         });
+
+  //         if (conflicts.length > 0) {
+  //           return res.status(409).json({
+  //             message: "Some DPS values already exist in other asset records.",
+  //             conflicts,
+  //           });
+  //         }
+  //       }
+  //     }
+
+  //     // Push current values into history before updating
+  //     existingAsset.history.push({
+  //       srNo: existingAsset.srNo,
+  //       stockNo: existingAsset.stockNo,
+  //       rt: existingAsset.rt,
+  //       status: existingAsset.status,
+  //       cStatus: existingAsset.cStatus,
+  //       can: existingAsset.can,
+  //       lid: existingAsset.lid,
+  //       pvc: existingAsset.pvc,
+  //       dps: existingAsset.dps,
+  //       keyboard: existingAsset.keyboard,
+  //       printer: existingAsset.printer,
+  //       charger: existingAsset.charger,
+  //       stripper: existingAsset.stripper,
+  //       solar: existingAsset.solar,
+  //       controller: existingAsset.controller,
+  //       ews: existingAsset.ews,
+  //       display: existingAsset.display,
+  //       battery: existingAsset.battery,
+  //       bond: existingAsset.bond,
+  //       vspSign: existingAsset.vspSign,
+  //       changedOn: changedOn,
+  //     });
+
+  //     // Update with new values
+  //     existingAsset.srNo = srNo ?? existingAsset.srNo;
+  //     existingAsset.stockNo = stockNo ?? existingAsset.stockNo;
+  //     existingAsset.rt = rt ?? existingAsset.rt;
+  //     existingAsset.duplicate = duplicate ?? existingAsset.duplicate;
+  //     existingAsset.vlcName = vlcName ?? existingAsset.vlcName;
+  //     existingAsset.status = status ?? existingAsset.status;
+  //     existingAsset.cStatus = cStatus ?? existingAsset.cStatus;
+  //     existingAsset.can = can ?? existingAsset.can;
+  //     existingAsset.lid = lid ?? existingAsset.lid;
+  //     existingAsset.pvc = pvc ?? existingAsset.pvc;
+  //     existingAsset.dps = dps ?? existingAsset.dps;
+  //     existingAsset.keyboard = keyboard ?? existingAsset.keyboard;
+  //     existingAsset.printer = printer ?? existingAsset.printer;
+  //     existingAsset.charger = charger ?? existingAsset.charger;
+  //     existingAsset.stripper = stripper ?? existingAsset.stripper;
+  //     existingAsset.solar = solar ?? existingAsset.solar;
+  //     existingAsset.controller = controller ?? existingAsset.controller;
+  //     existingAsset.ews = ews ?? existingAsset.ews;
+  //     existingAsset.display = display ?? existingAsset.display;
+  //     existingAsset.battery = battery ?? existingAsset.battery;
+  //     existingAsset.bond = bond ?? existingAsset.bond;
+  //     existingAsset.vspSign = vspSign ?? existingAsset.vspSign;
+
+  //     await existingAsset.save();
+
+  //     return res.json({
+  //       message: "Assets record updated & history saved ✅",
+  //       data: existingAsset,
+  //     });
+  //   } catch (error) {
+  //     console.error("Error in updateAssetsReport:", error);
+  //     return res.status(500).json({ error: "Internal server error" });
+  //   }
+  // };
+
   updateAssetsReport = async (req, res) => {
     try {
       const {
@@ -664,24 +1144,37 @@ class SubAdminController {
         vspSign,
       } = req.body;
 
+      const subAdminId = req.user.id;
       if (!vlcCode) {
         return res.status(400).json({ error: "vlcCode is required" });
       }
 
       const changedOn = new Date();
 
-      // Find the asset
+      // Find the existing asset record
       let existingAsset = await AssetsReportModel.findOne({ vlcCode });
-
       if (!existingAsset) {
         return res.status(404).json({
-          message: "Assets record not found. Please create a new record first.",
+          message: "Assets record not found. Please create it first.",
         });
       }
 
-      let isChanged = false;
+      // Helper to normalize comma-separated strings
+      const parseCommaValues = (val) => {
+        if (!val) return [];
+        if (Array.isArray(val)) return val.map((v) => v.trim()).filter(Boolean);
+        return val
+          .split(",")
+          .map((v) => v.trim())
+          .filter((v) => v.length > 0);
+      };
 
-      // Define fields that can be updated and should be checked for changes
+      const dpsValues = parseCommaValues(dps);
+      const bondValues = parseCommaValues(bond);
+
+      // ================================
+      // 🔍 Step 1: Detect if any change exists
+      // ================================
       const updatableFields = [
         "srNo",
         "stockNo",
@@ -707,26 +1200,20 @@ class SubAdminController {
         "vspSign",
       ];
 
+      let isChanged = false;
       for (const field of updatableFields) {
         const newValue = req.body[field];
         const existingValue = existingAsset[field];
-
-        // Only consider a change if a new value is provided in the request body
-        // and it's not null/undefined
         if (newValue !== undefined && newValue !== null) {
           if (typeof existingValue === "number") {
-            // For number fields, parse the new value and compare
             const parsedNewValue = parseFloat(newValue);
-            // Check if parsedNewValue is a valid number and different from existing
             if (!isNaN(parsedNewValue) && parsedNewValue !== existingValue) {
               isChanged = true;
               break;
             }
           } else {
-            // For string fields, trim and compare
             const trimmedNewValue = String(newValue).trim();
-            const trimmedExistingValue = String(existingValue || "").trim(); // Ensure existingValue is treated as string, default to empty string if null/undefined
-
+            const trimmedExistingValue = String(existingValue || "").trim();
             if (trimmedNewValue !== trimmedExistingValue) {
               isChanged = true;
               break;
@@ -737,67 +1224,157 @@ class SubAdminController {
 
       if (!isChanged) {
         return res.status(400).json({
-          message: "No changes detected. Please provide new values to update.",
+          message: "No changes detected. Provide new values to update.",
         });
       }
 
-      if (dps) {
-        // Normalize DPS field (split by comma, trim spaces)
-        let dpsValues = [];
-        if (dps) {
-          if (typeof dps === "string") {
-            dpsValues = dps
-              .split(",")
-              .map((v) => v.trim())
-              .filter((v) => v.length > 0);
-          } else if (Array.isArray(dps)) {
-            dpsValues = dps
-              .map((v) => v.toString().trim())
-              .filter((v) => v.length > 0);
-          }
-        }
+      // ================================
+      // ✅ Step 2: DPS & Bond Validation (must exist in issued)
+      // ================================
+      const issuedAssets = await IssuedAssetsToSubAdminModel.findOne({
+        subAdminId,
+      });
+      if (!issuedAssets) {
+        return res.status(400).json({
+          message:
+            "No issued assets found for this sub-admin. Cannot validate update.",
+        });
+      }
 
-        if (dpsValues.length > 0) {
-          // Get all assets that have some DPS value stored, excluding the current asset being updated
-          const possibleConflicts = await AssetsReportModel.find({
-            dps: { $exists: true, $ne: "" },
-            vlcCode: { $ne: existingAsset.vlcCode }, // Exclude the current asset's vlcCode
-          });
+      const issuedDpsList = parseCommaValues(issuedAssets.dps);
+      const issuedBondList = parseCommaValues(issuedAssets.bond);
 
-          let conflicts = [];
+      const missingDps = dpsValues.filter(
+        (val) => !issuedDpsList.includes(val)
+      );
+      const missingBonds = bondValues.filter(
+        (val) => !issuedBondList.includes(val)
+      );
 
-          possibleConflicts.forEach((asset) => {
-            const assetDpsValues = asset.dps
-              .split(",")
-              .map((v) => v.trim())
-              .filter((v) => v.length > 0);
+      if (missingDps.length > 0 || missingBonds.length > 0) {
+        return res.status(400).json({
+          message: "Some DPS or Bond values are not issued to this sub-admin.",
+          missing: { dps: missingDps, bond: missingBonds },
+        });
+      }
 
-            const overlapping = assetDpsValues.filter((val) =>
-              dpsValues.includes(val)
-            );
+      // ================================
+      // ⚠️ Step 3: DPS Conflict Check (with other records)
+      // ================================
+      if (dpsValues.length > 0) {
+        const possibleConflicts = await AssetsReportModel.find({
+          dps: { $exists: true, $ne: "" },
+          vlcCode: { $ne: vlcCode },
+        });
 
-            if (overlapping.length > 0) {
-              conflicts.push({
-                vlcCode: asset.vlcCode,
-                existingDps: overlapping,
-              });
-            }
-          });
-
-          if (conflicts.length > 0) {
-            return res.status(409).json({
-              message: "Some DPS values already exist in other asset records.",
-              conflicts,
+        const conflicts = [];
+        possibleConflicts.forEach((asset) => {
+          const assetDpsValues = parseCommaValues(asset.dps);
+          const overlapping = assetDpsValues.filter((val) =>
+            dpsValues.includes(val)
+          );
+          if (overlapping.length > 0) {
+            conflicts.push({
+              vlcCode: asset.vlcCode,
+              existingDps: overlapping,
             });
           }
+        });
+
+        if (conflicts.length > 0) {
+          return res.status(409).json({
+            message: "Some DPS values already exist in other asset records.",
+            conflicts,
+          });
         }
       }
 
-      // Push current values into history before updating
+      // ================================
+      // ⚠️ Step 3.1: Bond Conflict Check (with other records)
+      // ================================
+      if (bondValues.length > 0) {
+        const possibleConflicts = await AssetsReportModel.find({
+          bond: { $exists: true, $ne: "" },
+          vlcCode: { $ne: vlcCode },
+        });
+
+        const conflicts = [];
+        possibleConflicts.forEach((asset) => {
+          const assetBondValues = parseCommaValues(asset.bond);
+          const overlapping = assetBondValues.filter((val) =>
+            bondValues.includes(val)
+          );
+          if (overlapping.length > 0) {
+            conflicts.push({
+              vlcCode: asset.vlcCode,
+              existingBond: overlapping,
+            });
+          }
+        });
+
+        if (conflicts.length > 0) {
+          return res.status(409).json({
+            message: "Some Bond values already exist in other asset records.",
+            conflicts,
+          });
+        }
+      }
+
+      // ================================
+      // 🔢 Step 4: Validate inventory (issued vs used)
+      // ================================
+      const usedAssets = await UsedAssetsOfSubAdminModel.findOne({
+        subAdminId,
+      });
+      const used = usedAssets || {};
+      const issued = issuedAssets || {};
+
+      const numericFields = [
+        "rt",
+        "duplicate",
+        "can",
+        "lid",
+        "pvc",
+        "keyboard",
+        "printer",
+        "charger",
+        "stripper",
+        "solar",
+        "controller",
+        "ews",
+        "display",
+        "battery",
+      ];
+
+      for (const field of numericFields) {
+        const issuedVal = Number(issued[field] || 0);
+        const usedVal = Number(used[field] || 0);
+        const newVal = Number(req.body[field] || existingAsset[field] || 0);
+
+        const available =
+          issuedVal - usedVal + Number(existingAsset[field] || 0);
+        if (newVal > available) {
+          return res.status(400).json({
+            message: `Not enough ${field.toUpperCase()} assets left in inventory.`,
+            details: {
+              issued: issuedVal,
+              used: usedVal,
+              available,
+              requested: newVal,
+            },
+          });
+        }
+      }
+
+      // ================================
+      // 🕒 Step 5: Save history before update
+      // ================================
       existingAsset.history.push({
         srNo: existingAsset.srNo,
         stockNo: existingAsset.stockNo,
         rt: existingAsset.rt,
+        duplicate: existingAsset.duplicate,
+        vlcName: existingAsset.vlcName,
         status: existingAsset.status,
         cStatus: existingAsset.cStatus,
         can: existingAsset.can,
@@ -815,37 +1392,61 @@ class SubAdminController {
         battery: existingAsset.battery,
         bond: existingAsset.bond,
         vspSign: existingAsset.vspSign,
-        changedOn: changedOn,
+        changedOn,
       });
 
-      // Update with new values
-      existingAsset.srNo = srNo ?? existingAsset.srNo;
-      existingAsset.stockNo = stockNo ?? existingAsset.stockNo;
-      existingAsset.rt = rt ?? existingAsset.rt;
-      existingAsset.duplicate = duplicate ?? existingAsset.duplicate;
-      existingAsset.vlcName = vlcName ?? existingAsset.vlcName;
-      existingAsset.status = status ?? existingAsset.status;
-      existingAsset.cStatus = cStatus ?? existingAsset.cStatus;
-      existingAsset.can = can ?? existingAsset.can;
-      existingAsset.lid = lid ?? existingAsset.lid;
-      existingAsset.pvc = pvc ?? existingAsset.pvc;
-      existingAsset.dps = dps ?? existingAsset.dps;
-      existingAsset.keyboard = keyboard ?? existingAsset.keyboard;
-      existingAsset.printer = printer ?? existingAsset.printer;
-      existingAsset.charger = charger ?? existingAsset.charger;
-      existingAsset.stripper = stripper ?? existingAsset.stripper;
-      existingAsset.solar = solar ?? existingAsset.solar;
-      existingAsset.controller = controller ?? existingAsset.controller;
-      existingAsset.ews = ews ?? existingAsset.ews;
-      existingAsset.display = display ?? existingAsset.display;
-      existingAsset.battery = battery ?? existingAsset.battery;
-      existingAsset.bond = bond ?? existingAsset.bond;
-      existingAsset.vspSign = vspSign ?? existingAsset.vspSign;
+      //      // 🕒 Step 5: Save history before update
+      // existingAsset.history.push({ ... });
+
+      // 💾 Store OLD numeric values before overwriting anything
+      const oldNumericValues = {};
+      numericFields.forEach((f) => {
+        oldNumericValues[f] = Number(existingAsset[f] || 0);
+      });
+
+      // 🧾 Step 6: Apply new values
+      updatableFields.forEach((field) => {
+        if (req.body[field] !== undefined) {
+          existingAsset[field] = req.body[field];
+        }
+      });
 
       await existingAsset.save();
 
+      // ================================
+      // 🔁 Step 7: Update UsedAssetsOfSubAdminModel (with correct old values)
+      // ================================
+      if (usedAssets) {
+        numericFields.forEach((f) => {
+          const oldVal = oldNumericValues[f];
+          const newVal = Number(req.body[f] ?? oldVal);
+          const diff = newVal - oldVal;
+
+          if (!isNaN(diff) && diff !== 0) {
+            usedAssets[f] = (usedAssets[f] || 0) + diff;
+          }
+        });
+
+        // 🔒 Clamp negative values to zero (safety check)
+        numericFields.forEach((f) => {
+          usedAssets[f] = Math.max(0, usedAssets[f]);
+        });
+
+        const existingDps = parseCommaValues(usedAssets.dps);
+        const existingBond = parseCommaValues(usedAssets.bond);
+        usedAssets.dps = Array.from(
+          new Set([...existingDps, ...dpsValues])
+        ).join(",");
+        usedAssets.bond = Array.from(
+          new Set([...existingBond, ...bondValues])
+        ).join(",");
+
+        usedAssets.history.push({ changedOn });
+        await usedAssets.save();
+      }
+
       return res.json({
-        message: "Assets record updated & history saved ✅",
+        message: "Assets record updated successfully ✅",
         data: existingAsset,
       });
     } catch (error) {
@@ -924,28 +1525,34 @@ class SubAdminController {
         message: "Unauthorized: Only Sub Admins can perform this action.",
       });
     }
-  
+
     try {
       const subAdminId = req.user.id; // use the authenticated user's ID
-  
-      const assetsReport = await IssuedAssetsToSubAdminModel.findOne({ subAdminId }).lean();
-  
+
+      const assetsReport = await IssuedAssetsToSubAdminModel.findOne({
+        subAdminId,
+      }).lean();
+
+      const usedAssetsReport = await UsedAssetsOfSubAdminModel.findOne({
+        subAdminId,
+      }).lean();
+
       if (!assetsReport) {
         return res.status(404).json({
           message: "No issued assets report found for this sub-admin.",
         });
       }
-  
+
       res.status(200).json({
         message: "Issued assets report fetched successfully.",
         data: assetsReport,
+        usedAssets: usedAssetsReport,
       });
     } catch (error) {
       console.error("Error fetching issued assets report:", error);
       res.status(500).json({ message: "Internal Server Error" });
     }
   };
-  
 }
 
 export default SubAdminController;
