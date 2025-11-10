@@ -31,13 +31,16 @@ const jwtAuth = async (req, res, next) => {
       email: payload.email,
       role: payload.role,
       vendorId: payload.vendorId ? payload.vendorId : null,
+      supervisorId: payload.supervisorId ? payload.supervisorId : null,
+
     };
     req.user = user;
 
     if (
       payload.role != "SubAdmin" &&
       payload.role != "Vendor" &&
-      payload.role != "Admin"
+      payload.role != "Admin" &&
+      payload.role != "Supervisor"
     ) {
       console.log(payload.role);
       return res

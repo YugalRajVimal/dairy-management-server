@@ -20,6 +20,18 @@ subAdminRouter.get("/get-all-vendors", jwtAuth, (req, res) => {
   subAdminController.getAllVendors(req, res);
 });
 
+subAdminRouter.get("/get-all-routes", jwtAuth, (req, res) => {
+  subAdminController.getAllRoutes(req, res);
+});
+
+subAdminRouter.post("/onboard-supervisor", jwtAuth, (req, res) => {
+  subAdminController.onboardSupervisor(req, res);
+});
+
+subAdminRouter.get("/get-all-supervisors", jwtAuth, (req, res) => {
+  subAdminController.getAllSupervisors(req, res);
+});
+
 subAdminRouter.post(
   "/upload-excel-file",
   jwtAuth,

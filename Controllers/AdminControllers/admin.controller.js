@@ -20,6 +20,7 @@ class AdminController {
       city,
       state,
       pincode,
+      zone, // Add zone here
     } = req.body;
 
     // Trim string fields and convert email to lowercase
@@ -31,8 +32,9 @@ class AdminController {
     if (typeof city === "string") city = city.trim();
     if (typeof state === "string") state = state.trim();
     if (typeof pincode === "string") pincode = pincode.trim();
+    if (typeof zone === "string") zone = zone.trim(); // Trim zone
 
-    // Validate presence and type for all fields
+    // Validate presence and type for all fields, including zone
     if (
       !name ||
       typeof name !== "string" ||
@@ -49,7 +51,9 @@ class AdminController {
       !state ||
       typeof state !== "string" ||
       !pincode ||
-      typeof pincode !== "string"
+      typeof pincode !== "string" ||
+      !zone ||
+      typeof zone !== "string"
     ) {
       return res.status(400).json({
         message: "All fields are required and must be valid strings.",
@@ -63,7 +67,6 @@ class AdminController {
       return res.status(400).json({ message: "Invalid email format." });
     }
 
-    // Phone number validation (e.g., 10 digits, numeric)
     // Phone number validation (e.g., 10 digits, numeric)
     const phoneRegex = /^(\+\d{1,4}\s*)?\d{10}$/; // Allows an optional country code (e.g., +1, +91) followed by 10 digits
     if (!phoneRegex.test(phoneNumber)) {
@@ -98,7 +101,7 @@ class AdminController {
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // OTP valid for 10 minutes
 
-      // Create a new sub-admin instance
+      // Create a new sub-admin instance, include zone
       const newSubAdmin = new UserModel({
         name,
         nickName,
@@ -113,6 +116,7 @@ class AdminController {
           state,
           pincode,
         },
+        zone, // Store zone field at root level
       });
 
       // Save the new sub-admin to the database
@@ -122,9 +126,15 @@ class AdminController {
       const mailSubject =
         "Welcome to ABC Company - Verify Your Sub-Admin Account";
       const mailMessage = `Dear ${name},\n\nYour sub-admin account has been created. Please use your email to log into your account and log in:\n\nRegards,\nABC Company Team`;
-      await sendMail(email, mailSubject, mailMessage); // Use the lowercase email
+      
+      try {
+        await sendMail(email, mailSubject, mailMessage); // Use the lowercase email
+      } catch (mailError) {
+        console.error("Error sending mail to sub-admin:", mailError);
+        // Optionally, you could respond with a warning, but don't block onboarding
+      }
 
-      // Respond with success message and sub-admin details
+      // Respond with success message and sub-admin details, send zone as well
       res.status(201).json({
         message:
           "Sub-admin onboarded successfully. OTP sent to email for verification.",
@@ -135,6 +145,7 @@ class AdminController {
           phoneNo: newSubAdmin.phoneNo,
           role: newSubAdmin.role,
           address: newSubAdmin.address,
+          zone: newSubAdmin.zone,
         },
       });
     } catch (error) {

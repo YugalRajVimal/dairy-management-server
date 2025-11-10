@@ -46,6 +46,8 @@ class AuthController {
           email: user.email,
           role: user.role,
           vendorId: user.vendorId || null,
+          supervisorId: user.supervisorId || null,
+
         },
         process.env.JWT_SECRET,
         { expiresIn: "24h" }

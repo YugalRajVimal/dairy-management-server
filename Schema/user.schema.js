@@ -5,11 +5,12 @@ const userSchema = new mongoose.Schema(
     name: { type: String, required: true },
     nickName: { type: String },
     vendorId: { type: String, unique: true, sparse: true },
+    supervisorId: { type: String, unique: true, sparse: true },
     phoneNo: { type: String, required: true },
     email: { type: String, required: true },
     role: {
       type: String,
-      enum: ["Admin", "SubAdmin", "Vendor"], // Removed leading comma
+      enum: ["Admin", "SubAdmin", "Vendor", "Supervisor"], // Removed leading comma
       required: true,
     },
     address: {
@@ -17,6 +18,13 @@ const userSchema = new mongoose.Schema(
       city: { type: String },
       state: { type: String },
       pincode: { type: String },
+    },
+    zone: {
+      type: String,
+      unique: true,
+    },
+    route: {
+      type: String,
     },
     otp: {
       type: String,

@@ -7,6 +7,7 @@ import UserModel from "../../Schema/user.schema.js";
 import sendMail from "../../config/nodeMailer.config.js";
 import IssuedAssetsToSubAdminModel from "../../Schema/issued.assets.subadmin.schema.js";
 import UsedAssetsOfSubAdminModel from "../../Schema/used.assets.vendor.schema.js";
+import RoutesModel from "../../Schema/routes.schema.js";
 
 class SubAdminController {
   onboardVendor = async (req, res) => {
@@ -25,6 +26,7 @@ class SubAdminController {
       city,
       state,
       pincode,
+      route,
     } = req.body;
 
     // Trim string fields and convert email to lowercase
@@ -36,8 +38,9 @@ class SubAdminController {
     if (typeof city === "string") city = city.trim();
     if (typeof state === "string") state = state.trim();
     if (typeof pincode === "string") pincode = pincode.trim();
+    if (typeof route === "string") route = route.trim();
 
-    // Validate presence and type for all fields
+    // Validate presence and type for all fields, including route
     if (
       !name ||
       typeof name !== "string" ||
@@ -54,7 +57,9 @@ class SubAdminController {
       !state ||
       typeof state !== "string" ||
       !pincode ||
-      typeof pincode !== "string"
+      typeof pincode !== "string" ||
+      !route ||
+      typeof route !== "string"
     ) {
       return res.status(400).json({
         message: "All fields are required and must be valid strings.",
@@ -93,7 +98,7 @@ class SubAdminController {
     }
 
     try {
-      // Check if a sub-admin with this email already exists
+      // Check if a vendor with this email already exists
       const existingVendor = await UserModel.findOne({
         email, // Use the lowercase email for lookup
         role: "Vendor",
@@ -117,13 +122,21 @@ class SubAdminController {
           .json({ message: "Vendor with this vendor ID already exists." });
       }
 
-      // Create a new sub-admin instance
+      const existingRoute = await RoutesModel.findOne({ route });
+      if (!existingRoute) {
+        return res.status(400).json({
+          message:
+            "This route does not exist yet. Please create the route while onboarding a Supervisor.",
+        });
+      }
+
+      // Create a new vendor instance, include the route
       const newVendor = new UserModel({
         name,
         vendorId,
         email, // Use the lowercase email
-        phoneNo: phoneNumber, // Use phoneNo as per user.schema.js
-        role: "Vendor", // Assign a default role
+        phoneNo: phoneNumber,
+        role: "Vendor",
         otp: null,
         otpExpires: null,
         address: {
@@ -133,17 +146,24 @@ class SubAdminController {
           pincode,
         },
         onboardedBy: req.user.id,
+        route, // Store the route field at the root level
       });
 
-      // Save the new sub-admin to the database
+      // Save the new vendor to the database
       await newVendor.save();
 
-      // Send the OTP to the sub-admin's email
+      // Send the OTP to the vendor's email
       const mailSubject = "Welcome to ABC Company - Verify Your Vendor Account";
       const mailMessage = `Dear ${name},\n\nYour Vendor account has been created. Please use your email to log into your account:\n\nRegards,\nABC Company Team`;
-      await sendMail(email, mailSubject, mailMessage); // Use the lowercase email
 
-      // Respond with success message and sub-admin details
+      try {
+        await sendMail(email, mailSubject, mailMessage); // Use the lowercase email
+      } catch (mailError) {
+        console.error("Error sending mail to vendor:", mailError);
+        // Optionally: do not block onboarding if mail fails
+      }
+
+      // Respond with success message and vendor details
       res.status(201).json({
         message: "Vendor onboarded successfully. Mail sent to vendor.",
         subAdmin: {
@@ -154,6 +174,7 @@ class SubAdminController {
           phoneNo: newVendor.phoneNo,
           role: newVendor.role,
           address: newVendor.address,
+          route: newVendor.route,
         },
       });
     } catch (error) {
@@ -181,6 +202,236 @@ class SubAdminController {
       });
     } catch (error) {
       console.error("Error fetching Vendors:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
+  getAllRoutes = async (req, res) => {
+    if (req.user.role !== "SubAdmin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Sub Admins can perform this action.",
+      });
+    }
+    try {
+      const routes = await RoutesModel.find({})
+        .select("-__v")
+        .sort({ route: 1 }); // sort alphabetically by route
+      res.status(200).json({
+        message: "Routes fetched successfully.",
+        routes,
+      });
+    } catch (error) {
+      console.error("Error fetching Routes:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
+  onboardSupervisor = async (req, res) => {
+    if (req.user.role != "SubAdmin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Admins can perform this action.",
+      });
+    }
+
+    let {
+      name,
+      supervisorId,
+      email,
+      phoneNumber,
+      addressLine,
+      city,
+      state,
+      pincode,
+      route, // NEW FIELD: route
+    } = req.body;
+
+    // Trim string fields and convert email to lowercase
+    if (typeof name === "string") name = name.trim();
+    if (typeof supervisorId === "string") supervisorId = supervisorId.trim();
+    if (typeof email === "string") email = email.trim().toLowerCase();
+    if (typeof phoneNumber === "string") phoneNumber = phoneNumber.trim();
+    if (typeof addressLine === "string") addressLine = addressLine.trim();
+    if (typeof city === "string") city = city.trim();
+    if (typeof state === "string") state = state.trim();
+    if (typeof pincode === "string") pincode = pincode.trim();
+    if (typeof route === "string") route = route.trim(); // Trim route
+
+    // Validate presence and type for all fields (including route)
+    if (
+      !name ||
+      typeof name !== "string" ||
+      !supervisorId ||
+      typeof supervisorId !== "string" ||
+      !email ||
+      typeof email !== "string" ||
+      !phoneNumber ||
+      typeof phoneNumber !== "string" ||
+      !addressLine ||
+      typeof addressLine !== "string" ||
+      !city ||
+      typeof city !== "string" ||
+      !state ||
+      typeof state !== "string" ||
+      !pincode ||
+      typeof pincode !== "string" ||
+      !route ||
+      typeof route !== "string"
+    ) {
+      return res.status(400).json({
+        message: "All fields are required and must be valid strings.",
+      });
+    }
+
+    // More specific field validations
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ message: "Invalid email format." });
+    }
+
+    const phoneRegex = /^(\+\d{1,4}\s*)?\d{10}$/;
+    if (!phoneRegex.test(phoneNumber)) {
+      return res.status(400).json({
+        message:
+          "Invalid phone number format. Must be 10 digits, optionally preceded by a country code (e.g., +1 1234567890 or 1234567890).",
+      });
+    }
+
+    const pincodeRegex = /^\d{6}$/;
+    if (!pincodeRegex.test(pincode)) {
+      return res
+        .status(400)
+        .json({ message: "Invalid pincode format. Must be 6 digits." });
+    }
+
+    const supervisorIdRegex = /^\d{6}$/;
+    if (!supervisorIdRegex.test(supervisorId)) {
+      return res
+        .status(400)
+        .json({ message: "Invalid supervisorId format. Must be 6 digits." });
+    }
+
+    try {
+      // Check if a supervisor with this email already exists
+      const existingSupervisor = await UserModel.findOne({
+        email,
+        role: "Supervisor",
+      });
+
+      if (existingSupervisor) {
+        return res
+          .status(409)
+          .json({ message: "Supervisor with this email already exists." });
+      }
+
+      // Check if a supervisor with this supervisorId already exists
+      const existingSupervisorWithId = await UserModel.findOne({
+        supervisorId,
+        role: "Supervisor",
+      });
+
+      if (existingSupervisorWithId) {
+        return res.status(409).json({
+          message: "Supervisor with this Supervisor ID already exists.",
+        });
+      }
+
+      // Check if a supervisor with the same route already exists
+      const existingSupervisorWithRoute = await UserModel.findOne({
+        route: route,
+        role: "Supervisor",
+      });
+
+      if (existingSupervisorWithRoute) {
+        return res
+          .status(409)
+          .json({ message: "Supervisor with this route already exists." });
+      }
+
+      // Save the route to RouteModel if it doesn't already exist
+      try {
+        const existingRoute = await RoutesModel.findOne({ route });
+        if (!existingRoute) {
+          const newRoute = new RoutesModel({ route });
+          await newRoute.save();
+        }
+      } catch (routeError) {
+        console.error("Error saving route to RouteModel:", routeError);
+        // Do not block onboarding if this fails
+      }
+
+      // Create a new supervisor instance, including route
+      const newVendor = new UserModel({
+        name,
+        supervisorId,
+        email,
+        phoneNo: phoneNumber,
+        role: "Supervisor",
+        otp: null,
+        otpExpires: null,
+        address: {
+          addressLine,
+          city,
+          state,
+          pincode,
+        },
+        route, // Store route at the root level
+        onboardedBy: req.user.id,
+      });
+
+      // Save the new supervisor to the database
+      await newVendor.save();
+
+      // Send the OTP to the supervisor's email
+      const mailSubject =
+        "Welcome to ABC Company - Verify Your Supervisor Account";
+      const mailMessage = `Dear ${name},\n\nYour Supervisor account has been created. Please use your email to log into your account:\n\nRegards,\nABC Company Team`;
+
+      try {
+        await sendMail(email, mailSubject, mailMessage);
+      } catch (mailError) {
+        console.error("Error sending mail to supervisor:", mailError);
+        // Optionally, you could respond with a warning, but don't block onboarding
+      }
+
+      // Respond with success message and supervisor details, include route
+      res.status(201).json({
+        message: "Supervisor onboarded successfully. Mail sent to Supervisor.",
+        subAdmin: {
+          id: newVendor._id,
+          name: newVendor.name,
+          supervisorId: newVendor.supervisorId,
+          email: newVendor.email,
+          phoneNo: newVendor.phoneNo,
+          role: newVendor.role,
+          address: newVendor.address,
+          route: newVendor.route,
+        },
+      });
+    } catch (error) {
+      console.error("Error onboarding supervisor:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
+  getAllSupervisors = async (req, res) => {
+    if (req.user.role !== "SubAdmin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Sub Admins can perform this action.",
+      });
+    }
+
+    try {
+      const vendors = await UserModel.find({
+        onboardedBy: req.user.id,
+        role: "Supervisor",
+      }).select("-password -otp -otpExpires -__v"); // Exclude sensitive fields
+
+      res.status(200).json({
+        message: "Supervisor fetched successfully.",
+        vendors,
+      });
+    } catch (error) {
+      console.error("Error fetching Supervisor:", error);
       res.status(500).json({ message: "Internal Server Error" });
     }
   };
