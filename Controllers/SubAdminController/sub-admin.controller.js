@@ -75,7 +75,9 @@ class SubAdminController {
           totalMilkWeightLtr.length > 0 ? totalMilkWeightLtr[0].total : 0;
       }
 
+      // Total milkWeightLtr for reports uploaded by this SubAdmin (uploadedBy filter)
       const totalMilkWeightLtr2 = await MilkReportModel.aggregate([
+        { $match: { uploadedBy: req.user.id } },
         { $group: { _id: null, total: { $sum: "$milkWeightLtr" } } },
       ]);
       const totalmilkWeightSum =
@@ -1879,6 +1881,7 @@ class SubAdminController {
         });
       }
 
+      console.log(assetsReport, usedAssetsReport);
       res.status(200).json({
         message: "Issued assets report fetched successfully.",
         data: assetsReport,
