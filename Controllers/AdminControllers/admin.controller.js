@@ -1,9 +1,65 @@
 import sendMail from "../../config/nodeMailer.config.js";
 import IssuedAssetsToSubAdminModel from "../../Schema/issued.assets.subadmin.schema.js";
+import RoutesModel from "../../Schema/routes.schema.js";
 import UsedAssetsOfSubAdminModel from "../../Schema/used.assets.vendor.schema.js";
 import UserModel from "../../Schema/user.schema.js";
 
 class AdminController {
+  getProfileDetails = async (req, res) => {
+    try {
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const admin = await UserModel.findById(req.user.id).select(
+        "-password -otp -otpExpires -__v"
+      );
+      if (!admin) {
+        return res.status(404).json({ message: "Admin not found" });
+      }
+      res.status(200).json({
+        message: "Admin profile fetched successfully.",
+        profile: admin,
+      });
+    } catch (error) {
+      console.error("Error fetching admin profile:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
+  getDashboardDetails = async (req, res) => {
+    if (req.user.role !== "Admin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Admins can perform this action.",
+      });
+    }
+
+    try {
+      // Counts
+      const allSubAdminCount = await UserModel.countDocuments({
+        role: "SubAdmin",
+      });
+      const allSupervisorCount = await UserModel.countDocuments({
+        role: "Supervisor",
+      });
+      const allVendorsCount = await UserModel.countDocuments({
+        role: "Vendor",
+      });
+
+      const allRoutesCount = await RoutesModel.countDocuments({});
+
+      res.status(200).json({
+        message: "Dashboard details fetched successfully.",
+        allSubAdminCount,
+        allSupervisorCount,
+        allVendorsCount,
+        allRoutesCount,
+      });
+    } catch (error) {
+      console.error("Error fetching dashboard details:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
   onboardSubAdmin = async (req, res) => {
     if (req.user.role != "Admin") {
       return res.status(403).json({
@@ -126,7 +182,7 @@ class AdminController {
       const mailSubject =
         "Welcome to ABC Company - Verify Your Sub-Admin Account";
       const mailMessage = `Dear ${name},\n\nYour sub-admin account has been created. Please use your email to log into your account and log in:\n\nRegards,\nABC Company Team`;
-      
+
       try {
         await sendMail(email, mailSubject, mailMessage); // Use the lowercase email
       } catch (mailError) {
@@ -176,6 +232,50 @@ class AdminController {
     }
   };
 
+  getAllSupervisors = async (req, res) => {
+    if (req.user.role !== "Admin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Admins can perform this action.",
+      });
+    }
+
+    try {
+      const vendors = await UserModel.find({
+        role: "Supervisor",
+      }).select("-password -otp -otpExpires -__v"); // Exclude sensitive fields
+
+      res.status(200).json({
+        message: "Supervisor fetched successfully.",
+        vendors,
+      });
+    } catch (error) {
+      console.error("Error fetching Supervisor:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
+  getAllVendors = async (req, res) => {
+    if (req.user.role !== "Admin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Admins can perform this action.",
+      });
+    }
+
+    try {
+      const vendors = await UserModel.find({
+        role: "Vendor",
+      }).select("-password -otp -otpExpires -__v"); // Exclude sensitive fields
+
+      res.status(200).json({
+        message: "Vendors fetched successfully.",
+        vendors,
+      });
+    } catch (error) {
+      console.error("Error fetching Vendors:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
   getAllIssuedAssetsReport = async (req, res) => {
     if (req.user.role !== "Admin") {
       return res.status(403).json({
@@ -193,7 +293,7 @@ class AdminController {
 
       // Fetch paginated data
       const assetsReport = await IssuedAssetsToSubAdminModel.find({})
-        .populate("subAdminId", "_id name email") // Populate subAdminId with _id, name, and email
+        .populate("subAdminId", "_id name nickName email") // Populate subAdminId with _id, name, and email
         .skip((page - 1) * limit)
         .limit(Number(limit))
         .lean();
@@ -249,7 +349,7 @@ class AdminController {
       res.status(200).json({
         message: "Issued assets report fetched successfully.",
         data: assetsReport,
-        usedAssetsOfSubAdmin:usedAssetsReport
+        usedAssetsOfSubAdmin: usedAssetsReport,
       });
     } catch (error) {
       console.error("Error fetching issued assets report:", error);
@@ -365,15 +465,15 @@ class AdminController {
         message: "Unauthorized: Only Admins can perform this action.",
       });
     }
-  
+
     try {
       const { subAdminId, ...formData } = req.body;
       const { dps, bond } = formData;
-  
+
       if (!subAdminId) {
         return res.status(400).json({ message: "subAdminId is required." });
       }
-  
+
       // Check if a report already exists for this subAdminId
       const existingReport = await IssuedAssetsToSubAdminModel.findOne({
         subAdminId,
@@ -384,7 +484,7 @@ class AdminController {
             "Issued assets report already exists for this sub-admin. Please use update instead.",
         });
       }
-  
+
       // --- Helper function to parse values (string or array) ---
       const parseValues = (val) => {
         if (!val) return [];
@@ -400,25 +500,25 @@ class AdminController {
         }
         return [];
       };
-  
+
       // Parse both dps and bond values
       const dpsValues = parseValues(dps);
       const bondValues = parseValues(bond);
-  
+
       // --- Check for DPS conflicts ---
       if (dpsValues.length > 0) {
         const possibleDpsConflicts = await IssuedAssetsToSubAdminModel.find({
           dps: { $exists: true, $ne: "" },
         });
-  
+
         let dpsConflicts = [];
-  
+
         possibleDpsConflicts.forEach((asset) => {
           const assetDpsValues = parseValues(asset.dps);
           const overlapping = assetDpsValues.filter((val) =>
             dpsValues.includes(val)
           );
-  
+
           if (overlapping.length > 0) {
             dpsConflicts.push({
               vlcCode: asset.vlcCode,
@@ -426,29 +526,30 @@ class AdminController {
             });
           }
         });
-  
+
         if (dpsConflicts.length > 0) {
           return res.status(409).json({
-            message: "Some DPS values already exist in other issued asset records.",
+            message:
+              "Some DPS values already exist in other issued asset records.",
             conflicts: dpsConflicts,
           });
         }
       }
-  
+
       // --- Check for Bond conflicts (same logic as DPS) ---
       if (bondValues.length > 0) {
         const possibleBondConflicts = await IssuedAssetsToSubAdminModel.find({
           bond: { $exists: true, $ne: "" },
         });
-  
+
         let bondConflicts = [];
-  
+
         possibleBondConflicts.forEach((asset) => {
           const assetBondValues = parseValues(asset.bond);
           const overlapping = assetBondValues.filter((val) =>
             bondValues.includes(val)
           );
-  
+
           if (overlapping.length > 0) {
             bondConflicts.push({
               vlcCode: asset.vlcCode,
@@ -456,7 +557,7 @@ class AdminController {
             });
           }
         });
-  
+
         if (bondConflicts.length > 0) {
           return res.status(409).json({
             message:
@@ -465,7 +566,7 @@ class AdminController {
           });
         }
       }
-  
+
       // --- Create new asset report ---
       const newAssetReport = new IssuedAssetsToSubAdminModel({
         ...formData,
@@ -475,9 +576,9 @@ class AdminController {
         uploadedOn: new Date(),
         uploadedBy: req.user.id,
       });
-  
+
       const savedAssetReport = await newAssetReport.save();
-  
+
       res.status(201).json({
         message: "Issued assets added successfully.",
         data: savedAssetReport,
@@ -493,37 +594,38 @@ class AdminController {
       res.status(500).json({ message: "Internal Server Error" });
     }
   };
-  
-  
+
   updateIssuedAssets = async (req, res) => {
     if (req.user.role !== "Admin") {
       return res.status(403).json({
         message: "Unauthorized: Only Admins can perform this action.",
       });
     }
-  
+
     try {
       const { _id, ...updatedFields } = req.body;
-  
+
       if (!_id) {
         return res
           .status(400)
           .json({ message: "Asset report ID is required for update." });
       }
-  
+
       // Import the model dynamically (as in your existing setup)
       const IssuedAssetsToSubAdminModel = (
         await import("../../Schema/issued.assets.subadmin.schema.js")
       ).default;
-  
-      const existingAssetReport = await IssuedAssetsToSubAdminModel.findById(_id);
-  
+
+      const existingAssetReport = await IssuedAssetsToSubAdminModel.findById(
+        _id
+      );
+
       if (!existingAssetReport) {
         return res
           .status(404)
           .json({ message: "Issued assets report not found." });
       }
-  
+
       // --- Helper function to normalize comma-separated or array inputs ---
       const parseValues = (val) => {
         if (!val) return [];
@@ -539,25 +641,25 @@ class AdminController {
         }
         return [];
       };
-  
+
       const dpsValues = parseValues(updatedFields.dps);
       const bondValues = parseValues(updatedFields.bond);
-  
+
       // --- Check for DPS conflicts ---
       if (dpsValues.length > 0) {
         const possibleDpsConflicts = await IssuedAssetsToSubAdminModel.find({
           _id: { $ne: _id }, // exclude current record
           dps: { $exists: true, $ne: "" },
         });
-  
+
         let dpsConflicts = [];
-  
+
         possibleDpsConflicts.forEach((asset) => {
           const assetDpsValues = parseValues(asset.dps);
           const overlapping = assetDpsValues.filter((val) =>
             dpsValues.includes(val)
           );
-  
+
           if (overlapping.length > 0) {
             dpsConflicts.push({
               vlcCode: asset.vlcCode,
@@ -565,30 +667,31 @@ class AdminController {
             });
           }
         });
-  
+
         if (dpsConflicts.length > 0) {
           return res.status(409).json({
-            message: "Some DPS values already exist in other issued asset records.",
+            message:
+              "Some DPS values already exist in other issued asset records.",
             conflicts: dpsConflicts,
           });
         }
       }
-  
+
       // --- Check for Bond conflicts ---
       if (bondValues.length > 0) {
         const possibleBondConflicts = await IssuedAssetsToSubAdminModel.find({
           _id: { $ne: _id }, // exclude current record
           bond: { $exists: true, $ne: "" },
         });
-  
+
         let bondConflicts = [];
-  
+
         possibleBondConflicts.forEach((asset) => {
           const assetBondValues = parseValues(asset.bond);
           const overlapping = assetBondValues.filter((val) =>
             bondValues.includes(val)
           );
-  
+
           if (overlapping.length > 0) {
             bondConflicts.push({
               vlcCode: asset.vlcCode,
@@ -596,7 +699,7 @@ class AdminController {
             });
           }
         });
-  
+
         if (bondConflicts.length > 0) {
           return res.status(409).json({
             message:
@@ -605,7 +708,7 @@ class AdminController {
           });
         }
       }
-  
+
       // --- Build history entry before applying updates ---
       const historyEntry = {
         changedOn: new Date(),
@@ -625,9 +728,9 @@ class AdminController {
         battery: String(existingAssetReport.battery || 0),
         bond: String(existingAssetReport.bond || "-"),
       };
-  
+
       let hasChanges = false;
-  
+
       // --- Apply updates ---
       for (const key in updatedFields) {
         if (
@@ -645,13 +748,13 @@ class AdminController {
           hasChanges = true;
         }
       }
-  
+
       if (hasChanges) {
         existingAssetReport.history.push(historyEntry);
       }
-  
+
       const updatedAssetReport = await existingAssetReport.save();
-  
+
       res.status(200).json({
         message: "Issued assets updated successfully.",
         data: updatedAssetReport,
@@ -667,7 +770,6 @@ class AdminController {
       res.status(500).json({ message: "Internal Server Error" });
     }
   };
-  
 }
 
 export default AdminController;

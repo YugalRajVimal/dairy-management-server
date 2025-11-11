@@ -11,12 +11,30 @@ adminRouter.get("/", (req, res) => {
   res.send("Welcome to ABC Company  Admin APIs");
 });
 
+adminRouter.get("/get-profile-details", jwtAuth, (req, res) => {
+  adminController.getProfileDetails(req, res);
+});
+
+
+adminRouter.get("/get-dashboard-details", jwtAuth, (req, res) => {
+  adminController.getDashboardDetails(req, res);
+});
+
+
 adminRouter.post("/onboard-sub-admin", jwtAuth, (req, res) => {
   adminController.onboardSubAdmin(req, res);
 });
 
 adminRouter.get("/get-all-sub-admins", jwtAuth, (req, res) => {
   adminController.getAllSubAdmins(req, res);
+});
+
+adminRouter.get("/get-all-supervisors", jwtAuth, (req, res) => {
+  adminController.getAllSupervisors(req, res);
+});
+
+adminRouter.get("/get-all-vendors", jwtAuth, (req, res) => {
+  adminController.getAllVendors(req, res);
 });
 
 adminRouter.get("/get-issued-assets-report", jwtAuth, (req, res) => {
@@ -34,6 +52,5 @@ adminRouter.post("/add-issued-assets", jwtAuth, (req, res) => {
 adminRouter.post("/update-issued-assets", jwtAuth, (req, res) => {
   adminController.updateIssuedAssets(req, res);
 });
-
 
 export default adminRouter;

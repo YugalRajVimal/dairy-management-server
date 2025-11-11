@@ -12,6 +12,14 @@ supervisorRouter.get("/", (req, res) => {
   res.send("Welcome to ABC Company  Admin APIs");
 });
 
+supervisorRouter.get("/get-profile-details", jwtAuth, (req, res) => {
+  supervisorController.getProfileDetails(req, res);
+});
+
+supervisorRouter.get("/get-dashboard-details", jwtAuth, (req, res) => {
+  supervisorController.getDashboardDetails(req, res);
+});
+
 supervisorRouter.post("/onboard-vendor", jwtAuth, (req, res) => {
   supervisorController.onboardVendor(req, res);
 });

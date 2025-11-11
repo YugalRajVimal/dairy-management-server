@@ -9,6 +9,73 @@ import IssuedAssetsToSubAdminModel from "../../Schema/issued.assets.subadmin.sch
 import UsedAssetsOfSubAdminModel from "../../Schema/used.assets.vendor.schema.js";
 
 class SupervisorController {
+  getProfileDetails = async (req, res) => {
+    try {
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const supervisor = await UserModel.findById(req.user.id).select(
+        "-password -otp -otpExpires -__v"
+      );
+      if (!supervisor) {
+        return res.status(404).json({ message: "Supervisor not found" });
+      }
+      res.status(200).json({
+        message: "Supervisor profile fetched successfully.",
+        profile: supervisor,
+      });
+    } catch (error) {
+      console.error("Error fetching supervisor profile:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+  
+  getDashboardDetails = async (req, res) => {
+    if (req.user.role !== "Supervisor") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Supervisor can perform this action.",
+      });
+    }
+
+    try {
+      // First, find the supervisor's route
+      const supervisor = await UserModel.findById(req.user.id).select("route");
+
+      if (!supervisor || !supervisor.route) {
+        return res.status(400).json({
+          message: "Supervisor's route information not found.",
+        });
+      }
+      const allVendorsCount = await UserModel.countDocuments({
+        role: "Vendor",
+        route: supervisor.route,
+      });
+
+      // Sum up all the milkWeightLtr uploaded by SubAdmin
+      // Find all vendors whose route matches the supervisor's route, then sum milkWeightLtr where vlcUploaderCode is one of those vendorIds
+      const vendorIds = await UserModel.find({
+        role: "Vendor",
+        route: supervisor.route,
+      }).distinct("vendorId");
+      const totalMilkWeightLtr = await MilkReportModel.aggregate([
+        { $match: { vlcUploaderCode: { $in: vendorIds } } },
+        { $group: { _id: null, total: { $sum: "$milkWeightLtr" } } },
+      ]);
+
+      const milkWeightSum =
+        totalMilkWeightLtr.length > 0 ? totalMilkWeightLtr[0].total : 0;
+
+      res.status(200).json({
+        message: "Dashboard details fetched successfully.",
+        allVendorsCount,
+        milkWeightSum,
+      });
+    } catch (error) {
+      console.error("Error fetching dashboard details:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
   getAllVendors = async (req, res) => {
     if (req.user.role !== "Supervisor") {
       return res.status(403).json({

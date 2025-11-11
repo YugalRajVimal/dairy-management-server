@@ -10,6 +10,91 @@ import UsedAssetsOfSubAdminModel from "../../Schema/used.assets.vendor.schema.js
 import RoutesModel from "../../Schema/routes.schema.js";
 
 class SubAdminController {
+  getProfileDetails = async (req, res) => {
+    try {
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const subAdmin = await UserModel.findById(req.user.id).select(
+        "-password -otp -otpExpires -__v"
+      );
+      if (!subAdmin) {
+        return res.status(404).json({ message: "SubAdmin not found" });
+      }
+      res.status(200).json({
+        message: "SubAdmin profile fetched successfully.",
+        profile: subAdmin,
+      });
+    } catch (error) {
+      console.error("Error fetching subadmin profile:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+  getDashboardDetails = async (req, res) => {
+    if (req.user.role !== "SubAdmin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Sub Admins can perform this action.",
+      });
+    }
+
+    try {
+      // Count all Supervisors onboarded by this SubAdmin
+      const allSupervisorCount = await UserModel.countDocuments({
+        role: "Supervisor",
+        onboardedBy: req.user.id,
+      });
+
+      // Count all Vendors onboarded by this SubAdmin
+      const allVendorsCount = await UserModel.countDocuments({
+        role: "Vendor",
+        onboardedBy: req.user.id,
+      });
+
+      // Get count of all unique non-null/non-empty routes assigned to supervisors onboarded by this SubAdmin
+      const supervisorRoutes = await UserModel.distinct("route", {
+        role: "Supervisor",
+        onboardedBy: req.user.id,
+        route: { $exists: true, $ne: null, $ne: "" },
+      });
+      const allRoutesCount = supervisorRoutes.length;
+
+      // Get all vendors onboarded by this SubAdmin and collect their vendorIds
+      const vendorIds = await UserModel.find(
+        { role: "Vendor", onboardedBy: req.user.id },
+        "vendorId"
+      ).distinct("vendorId");
+
+      // Sum up milkWeightLtr from MilkReport whose vlcUploaderCode matches the vendorIds
+      let milkWeightSum = 0;
+      if (vendorIds.length > 0) {
+        const totalMilkWeightLtr = await MilkReportModel.aggregate([
+          { $match: { vlcUploaderCode: { $in: vendorIds } } },
+          { $group: { _id: null, total: { $sum: "$milkWeightLtr" } } },
+        ]);
+        milkWeightSum =
+          totalMilkWeightLtr.length > 0 ? totalMilkWeightLtr[0].total : 0;
+      }
+
+      const totalMilkWeightLtr2 = await MilkReportModel.aggregate([
+        { $group: { _id: null, total: { $sum: "$milkWeightLtr" } } },
+      ]);
+      const totalmilkWeightSum =
+        totalMilkWeightLtr2.length > 0 ? totalMilkWeightLtr2[0].total : 0;
+
+      res.status(200).json({
+        message: "Dashboard details fetched successfully.",
+        allSupervisorCount,
+        allVendorsCount,
+        allRoutesCount,
+        milkWeightSum,
+        totalmilkWeightSum,
+      });
+    } catch (error) {
+      console.error("Error fetching dashboard details:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
   onboardVendor = async (req, res) => {
     if (req.user.role != "SubAdmin") {
       return res.status(403).json({

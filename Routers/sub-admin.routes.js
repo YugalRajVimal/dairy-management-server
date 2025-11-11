@@ -12,6 +12,16 @@ subAdminRouter.get("/", (req, res) => {
   res.send("Welcome to ABC Company  Admin APIs");
 });
 
+subAdminRouter.get("/get-profile-details", jwtAuth, (req, res) => {
+  subAdminController.getProfileDetails(req, res);
+});
+
+
+subAdminRouter.get("/get-dashboard-details", jwtAuth, (req, res) => {
+  subAdminController.getDashboardDetails(req, res);
+});
+
+
 subAdminRouter.post("/onboard-vendor", jwtAuth, (req, res) => {
   subAdminController.onboardVendor(req, res);
 });
