@@ -125,9 +125,20 @@ class SubAdminController {
     if (typeof city === "string") city = city.trim();
     if (typeof state === "string") state = state.trim();
     if (typeof pincode === "string") pincode = pincode.trim();
-    if (typeof route === "string") route = route.trim();
 
-    // Validate presence and type for all fields, including route
+    // Ensure route is an integer (parse from string/number if needed)
+    if (typeof route === "string" && route.trim() !== "") {
+      route = parseInt(route, 10);
+    }
+    if (typeof route === "number" && !isNaN(route)) {
+      // OK
+    } else {
+      return res.status(400).json({
+        message: "Route is required and must be a valid integer.",
+      });
+    }
+
+    // Validate presence and type for all fields, including route as integer
     if (
       !name ||
       typeof name !== "string" ||
@@ -145,11 +156,11 @@ class SubAdminController {
       typeof state !== "string" ||
       !pincode ||
       typeof pincode !== "string" ||
-      !route ||
-      typeof route !== "string"
+      typeof route !== "number" ||
+      isNaN(route)
     ) {
       return res.status(400).json({
-        message: "All fields are required and must be valid strings.",
+        message: "All fields are required. Route must be a valid integer.",
       });
     }
 
@@ -209,6 +220,7 @@ class SubAdminController {
           .json({ message: "Vendor with this vendor ID already exists." });
       }
 
+      // Route must exist and be a number
       const existingRoute = await RoutesModel.findOne({ route });
       if (!existingRoute) {
         return res.status(400).json({
@@ -217,7 +229,7 @@ class SubAdminController {
         });
       }
 
-      // Create a new vendor instance, include the route
+      // Create a new vendor instance, include the route (integer)
       const newVendor = new UserModel({
         name,
         vendorId,
@@ -233,7 +245,7 @@ class SubAdminController {
           pincode,
         },
         onboardedBy: req.user.id,
-        route, // Store the route field at the root level
+        route, // Store the route as integer at the root level
       });
 
       // Save the new vendor to the database
@@ -1890,6 +1902,41 @@ class SubAdminController {
     } catch (error) {
       console.error("Error fetching issued assets report:", error);
       res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
+  editMilkReport = async (req, res) => {
+    try {
+      // Validate _id presence
+      const { id } = req.params;
+      if (!id) {
+        return res.status(400).json({ message: "Milk Report ID is required." });
+      }
+
+      // Get update object from request body
+      const updateData = req.body;
+      if (!updateData || Object.keys(updateData).length === 0) {
+        return res.status(400).json({ message: "No update data provided." });
+      }
+
+      // Update milk report document
+      const updatedMilkReport = await MilkReportModel.findByIdAndUpdate(
+        id,
+        updateData,
+        { new: true }
+      );
+
+      if (!updatedMilkReport) {
+        return res.status(404).json({ message: "Milk Report not found." });
+      }
+
+      return res.status(200).json({
+        message: "Milk Report updated successfully.",
+        data: updatedMilkReport,
+      });
+    } catch (error) {
+      console.error("Error updating Milk Report:", error);
+      return res.status(500).json({ message: "Internal Server Error" });
     }
   };
 }

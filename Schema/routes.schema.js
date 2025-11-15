@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const routesSchema = new mongoose.Schema(
   {
     route: {
-      type: String,
+      type: Number,
       required: true,
     },
   },
