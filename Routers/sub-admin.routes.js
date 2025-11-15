@@ -55,6 +55,14 @@ subAdminRouter.get("/get-uploaded-milk-report", jwtAuth, (req, res) => {
   subAdminController.getUploadedMilkReport(req, res);
 });
 
+subAdminRouter.put(
+  "/update-milk-report/:id",
+  jwtAuth,
+  (req, res) => {
+    subAdminController.updateMilkReport(req, res);
+  }
+);
+
 subAdminRouter.post(
   "/upload-sales-report",
   jwtAuth,
@@ -71,6 +79,15 @@ subAdminRouter.get("/get-uploaded-sales-report", jwtAuth, (req, res) => {
 subAdminRouter.post("/add-sales-report", jwtAuth, (req, res) => {
   subAdminController.addSalesReport(req, res);
 });
+
+subAdminRouter.put(
+  "/update-sales-report/:id",
+  jwtAuth,
+  (req, res) => {
+    subAdminController.updateSalesReport(req, res);
+  }
+);
+
 
 subAdminRouter.post("/add-assets-report", jwtAuth, (req, res) => {
   subAdminController.addAssetsReport(req, res);

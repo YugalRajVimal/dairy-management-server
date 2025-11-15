@@ -13,7 +13,18 @@ const salesReportSchema = new mongoose.Schema(
     vlcUploaderCode: { type: String, required: true },
     quantity: { type: Number, required: true },
     docDate: { type: Date, required: true },
+    edited: { type: Boolean },
+    history: [
+      {
+        itemCode: { type: String, required: true },
+        itemName: { type: String, required: true },
+        quantity: { type: Number, required: true },
+        docDate: { type: Date, required: true },
+        editedOn: { type: Date },
+      },
+    ],
   },
+
   { timestamps: true }
 );
 

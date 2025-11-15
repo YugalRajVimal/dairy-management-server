@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { type } from "os";
 
 const milkReportSchema = new mongoose.Schema(
   {
@@ -9,12 +10,24 @@ const milkReportSchema = new mongoose.Schema(
       required: true,
     },
     docDate: { type: Date, required: true },
-    shift: { type: String,  required: true },
+    shift: { type: String, required: true },
     vlcUploaderCode: { type: String, required: true },
     vlcName: { type: String, required: true },
     milkWeightLtr: { type: Number, required: true },
     fatPercentage: { type: Number, required: true },
     snfPercentage: { type: Number, required: true },
+    edited: { type: Boolean },
+    history: [
+      {
+        docDate: { type: Date },
+        shift: { type: String },
+        vlcName: { type: String },
+        milkWeightLtr: { type: Number },
+        fatPercentage: { type: Number },
+        snfPercentage: { type: Number },
+        editedOn:{type: Date}
+      },
+    ],
   },
   { timestamps: true }
 );

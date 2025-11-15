@@ -659,6 +659,88 @@ class SubAdminController {
     }
   };
 
+  /**
+   * Update MilkReport record for only allowed fields:
+   *   docDate, shift, vlcName, milkWeightLtr, fatPercentage, snfPercentage
+   * On update:
+   *   - set 'edited' = true
+   *   - push previous values into 'history' array
+   */
+  updateMilkReport = async (req, res) => {
+    if (req.user.role !== "SubAdmin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Sub Admins can perform this action.",
+      });
+    }
+
+    // Only allow these fields to be updated
+    const allowedFields = [
+      "docDate",
+      "shift",
+      "vlcName",
+      "milkWeightLtr",
+      "fatPercentage",
+      "snfPercentage",
+    ];
+
+    try {
+      const { id } = req.params; // assume :id as MilkReport _id
+      if (!id) {
+        return res.status(400).json({ message: "Milk report ID is required." });
+      }
+
+      // Pick allowed fields from body
+      const updates = {};
+      for (const field of allowedFields) {
+        if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+          updates[field] = req.body[field];
+        }
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res
+          .status(400)
+          .json({ message: "No valid fields submitted for update." });
+      }
+
+      const milkReport = await MilkReportModel.findById(id);
+      if (!milkReport) {
+        return res.status(404).json({ message: "Milk report not found." });
+      }
+
+      // Save old values for history
+      const historyEntry = {};
+      for (const field of allowedFields) {
+        historyEntry[field] = milkReport[field];
+      }
+      // Record docDate in history (can be useful even if not changed)
+      historyEntry.docDate = milkReport.docDate;
+
+      // Add editedOn time (Date) for this update
+      const editedOnDate = new Date();
+      historyEntry.editedOn = editedOnDate;
+
+      milkReport.history = milkReport.history || [];
+      milkReport.history.push(historyEntry);
+
+      // Update the fields
+      for (const field in updates) {
+        milkReport[field] = updates[field];
+      }
+      milkReport.edited = true;
+
+      await milkReport.save();
+
+      res.status(200).json({
+        message: "Milk report updated successfully ✅",
+        data: milkReport,
+      });
+    } catch (error) {
+      console.error("Error updating milk report:", error);
+      res.status(500).json({ message: "Failed to update milk report" });
+    }
+  };
+
   uploadSalesReport = async (req, res) => {
     if (req.user.role !== "SubAdmin") {
       return res.status(403).json({
@@ -788,6 +870,58 @@ class SubAdminController {
     } catch (error) {
       console.error("Error in getUploadedSalesReport:", error);
       return res.status(500).json({ error: "Internal server error" });
+    }
+  };
+
+  // ✅ Update a single sales report, saving history and updating 'edited' and 'editedOn' accordingly
+  updateSalesReport = async (req, res) => {
+    if (req.user.role !== "SubAdmin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Sub Admins can perform this action.",
+      });
+    }
+
+    try {
+      const { id } = req.params;
+      const { itemCode, itemName, quantity, docDate } = req.body; // changed code->name
+
+      // Find the sales report document
+      const salesReport = await SalesReportModel.findById(id);
+      if (!salesReport) {
+        return res.status(404).json({ error: "Sales report not found." });
+      }
+
+      // Create a history entry (all fields as defined in schema)
+      const historyEntry = {
+        itemCode: salesReport.itemCode,
+        itemName: salesReport.itemName,
+        quantity: salesReport.quantity,
+        docDate: salesReport.docDate,
+        editedOn: new Date(),
+      };
+
+      // Push the history entry
+      salesReport.history = salesReport.history || [];
+      salesReport.history.push(historyEntry);
+
+      // Update the fields
+      if (itemCode !== undefined) salesReport.itemCode = itemCode;
+      if (itemName !== undefined) salesReport.itemName = itemName;
+      if (quantity !== undefined) salesReport.quantity = quantity;
+      if (docDate !== undefined) salesReport.docDate = new Date(docDate);
+
+      // Set edited flag
+      salesReport.edited = true;
+
+      await salesReport.save();
+
+      res.status(200).json({
+        message: "Sales report updated successfully. History entry created.",
+        data: salesReport,
+      });
+    } catch (error) {
+      console.error("Error in updateSalesReport:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
   };
 
