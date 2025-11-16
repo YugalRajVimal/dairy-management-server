@@ -341,7 +341,7 @@ class SubAdminController {
       city,
       state,
       pincode,
-      route, // NEW FIELD: route
+      routes, // Expecting routes as array
     } = req.body;
 
     // Trim string fields and convert email to lowercase
@@ -353,9 +353,8 @@ class SubAdminController {
     if (typeof city === "string") city = city.trim();
     if (typeof state === "string") state = state.trim();
     if (typeof pincode === "string") pincode = pincode.trim();
-    if (typeof route === "string") route = route.trim(); // Trim route
 
-    // Validate presence and type for all fields (including route)
+    // Validate presence and type for all fields (including routes array)
     if (
       !name ||
       typeof name !== "string" ||
@@ -373,11 +372,20 @@ class SubAdminController {
       typeof state !== "string" ||
       !pincode ||
       typeof pincode !== "string" ||
-      !route ||
-      typeof route !== "string"
+      !Array.isArray(routes) ||
+      routes.length === 0
     ) {
       return res.status(400).json({
-        message: "All fields are required and must be valid strings.",
+        message: "All fields are required and must be valid. 'routes' must be a non-empty array.",
+      });
+    }
+
+    // Route numbers must be numbers, filter/validate
+    routes = routes.map((r) => Number(r)).filter((r) => typeof r === "number" && !isNaN(r));
+
+    if (routes.length === 0) {
+      return res.status(400).json({
+        message: "Supervisor must be assigned at least one valid numeric route.",
       });
     }
 
@@ -434,32 +442,34 @@ class SubAdminController {
         });
       }
 
-      // Check if a supervisor with the same route already exists
+      // Check if any of the requested routes already has a supervisor assigned
       const existingSupervisorWithRoute = await UserModel.findOne({
-        route: route,
+        supervisorRoutes: { $in: routes },
         role: "Supervisor",
       });
 
       if (existingSupervisorWithRoute) {
         return res
           .status(409)
-          .json({ message: "Supervisor with this route already exists." });
+          .json({ message: "A route you selected is already assigned to a supervisor." });
       }
 
-      // Save the route to RouteModel if it doesn't already exist
-      try {
-        const existingRoute = await RoutesModel.findOne({ route });
-        if (!existingRoute) {
-          const newRoute = new RoutesModel({ route });
-          await newRoute.save();
-        }
-      } catch (routeError) {
-        console.error("Error saving route to RouteModel:", routeError);
-        // Do not block onboarding if this fails
-      }
+      // // Save any new routes to RouteModel if they don't already exist
+      // try {
+      //   for (const routeNo of routes) {
+      //     const existingRoute = await RoutesModel.findOne({ route: routeNo });
+      //     if (!existingRoute) {
+      //       const newRoute = new RoutesModel({ route: routeNo });
+      //       await newRoute.save();
+      //     }
+      //   }
+      // } catch (routeError) {
+      //   console.error("Error saving route to RouteModel:", routeError);
+      //   // Do not block onboarding if this fails
+      // }
 
-      // Create a new supervisor instance, including route
-      const newVendor = new UserModel({
+      // Create a new supervisor instance, including supervisorRoues: routes array
+      const newSupervisor = new UserModel({
         name,
         supervisorId,
         email,
@@ -473,12 +483,12 @@ class SubAdminController {
           state,
           pincode,
         },
-        route, // Store route at the root level
+        supervisorRoutes: routes, // Save array of route numbers!
         onboardedBy: req.user.id,
       });
 
       // Save the new supervisor to the database
-      await newVendor.save();
+      await newSupervisor.save();
 
       // Send the OTP to the supervisor's email
       const mailSubject =
@@ -492,18 +502,18 @@ class SubAdminController {
         // Optionally, you could respond with a warning, but don't block onboarding
       }
 
-      // Respond with success message and supervisor details, include route
+      // Respond with success message and supervisor details, include supervisorRoues
       res.status(201).json({
         message: "Supervisor onboarded successfully. Mail sent to Supervisor.",
         subAdmin: {
-          id: newVendor._id,
-          name: newVendor.name,
-          supervisorId: newVendor.supervisorId,
-          email: newVendor.email,
-          phoneNo: newVendor.phoneNo,
-          role: newVendor.role,
-          address: newVendor.address,
-          route: newVendor.route,
+          id: newSupervisor._id,
+          name: newSupervisor.name,
+          supervisorId: newSupervisor.supervisorId,
+          email: newSupervisor.email,
+          phoneNo: newSupervisor.phoneNo,
+          role: newSupervisor.role,
+          address: newSupervisor.address,
+          supervisorRoutes: newSupervisor.supervisorRoutes,
         },
       });
     } catch (error) {

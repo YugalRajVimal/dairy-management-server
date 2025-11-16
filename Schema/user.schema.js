@@ -26,6 +26,7 @@ const userSchema = new mongoose.Schema(
     route: {
       type: Number,
     },
+    supervisorRoutes: [{ type: Number }],
     otp: {
       type: String,
     },
