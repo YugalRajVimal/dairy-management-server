@@ -18,7 +18,7 @@ class VendorController {
 
       const vendorProfile = await UserModel.findOne(
         { vendorId },
-        "name email phoneNumber address vendorId onboardedBy createdAt updatedAt"
+        "name email phoneNumber address vendorId route onboardedBy createdAt updatedAt"
       );
 
       if (!vendorProfile) {
@@ -68,9 +68,40 @@ class VendorController {
         };
       }
 
-      const milkReports = await MilkReportModel.find(query).sort({
+      const milkReportsRaw = await MilkReportModel.find(query).sort({
         docDate: 1,
       });
+
+      // Utility for formatting date to DD-MM-YYYY
+      const formatDate = (date) => {
+        if (!date) return "";
+        const d = new Date(date);
+        const day = String(d.getDate()).padStart(2, "0");
+        const month = String(d.getMonth() + 1).padStart(2, "0");
+        const year = d.getFullYear();
+        return `${day}-${month}-${year}`;
+      };
+
+      const milkReports = milkReportsRaw.map((report) => ({
+        docDate: formatDate(report.docDate),
+        shift: report.shift || "",
+        vlcUploaderCode: report.vlcUploaderCode || "",
+        vlcName: report.vlcName || "",
+        milkWeightLtr: report.milkWeightLtr ?? "",
+        fatPercentage: report.fatPercentage ?? "",
+        snfPercentage: report.snfPercentage ?? "",
+        edited: !!report.edited,
+        history: (report.history || []).map((h) => ({
+          "DOC DATE": formatDate(h.docDate),
+          "SHIFT": h.shift || "",
+          "VLC CODE": h.vlcUploaderCode || "",
+          "VLC NAME": h.vlcName || "",
+          "MILK WEIGHT (Ltr)": h.milkWeightLtr ?? "",
+          "FAT %": h.fatPercentage ?? "",
+          "SNF %": h.snfPercentage ?? "",
+          editedOn: h.editedOn ? formatDate(h.editedOn) : "",
+        })),
+      }));
 
       return res.status(200).json({ success: true, data: milkReports });
     } catch (error) {

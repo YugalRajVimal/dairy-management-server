@@ -21,11 +21,12 @@ const milkReportSchema = new mongoose.Schema(
       {
         docDate: { type: Date },
         shift: { type: String },
+        vlcUploaderCode: { type: String},
         vlcName: { type: String },
         milkWeightLtr: { type: Number },
         fatPercentage: { type: Number },
         snfPercentage: { type: Number },
-        editedOn:{type: Date}
+        editedOn: { type: Date },
       },
     ],
   },

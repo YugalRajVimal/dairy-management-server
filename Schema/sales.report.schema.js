@@ -16,10 +16,11 @@ const salesReportSchema = new mongoose.Schema(
     edited: { type: Boolean },
     history: [
       {
-        itemCode: { type: String, required: true },
-        itemName: { type: String, required: true },
-        quantity: { type: Number, required: true },
-        docDate: { type: Date, required: true },
+        itemCode: { type: String },
+        itemName: { type: String },
+        vlcUploaderCode: { type: String },
+        quantity: { type: Number },
+        docDate: { type: Date },
         editedOn: { type: Date },
       },
     ],

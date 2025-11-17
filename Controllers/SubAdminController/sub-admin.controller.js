@@ -376,16 +376,20 @@ class SubAdminController {
       routes.length === 0
     ) {
       return res.status(400).json({
-        message: "All fields are required and must be valid. 'routes' must be a non-empty array.",
+        message:
+          "All fields are required and must be valid. 'routes' must be a non-empty array.",
       });
     }
 
     // Route numbers must be numbers, filter/validate
-    routes = routes.map((r) => Number(r)).filter((r) => typeof r === "number" && !isNaN(r));
+    routes = routes
+      .map((r) => Number(r))
+      .filter((r) => typeof r === "number" && !isNaN(r));
 
     if (routes.length === 0) {
       return res.status(400).json({
-        message: "Supervisor must be assigned at least one valid numeric route.",
+        message:
+          "Supervisor must be assigned at least one valid numeric route.",
       });
     }
 
@@ -449,9 +453,9 @@ class SubAdminController {
       });
 
       if (existingSupervisorWithRoute) {
-        return res
-          .status(409)
-          .json({ message: "A route you selected is already assigned to a supervisor." });
+        return res.status(409).json({
+          message: "A route you selected is already assigned to a supervisor.",
+        });
       }
 
       // // Save any new routes to RouteModel if they don't already exist
@@ -729,6 +733,7 @@ class SubAdminController {
       // Add editedOn time (Date) for this update
       const editedOnDate = new Date();
       historyEntry.editedOn = editedOnDate;
+      historyEntry.vlcUploaderCode = milkReport.vlcUploaderCode;
 
       milkReport.history = milkReport.history || [];
       milkReport.history.push(historyEntry);
@@ -905,6 +910,7 @@ class SubAdminController {
       const historyEntry = {
         itemCode: salesReport.itemCode,
         itemName: salesReport.itemName,
+        vlcUploaderCode: salesReport.vlcUploaderCode,
         quantity: salesReport.quantity,
         docDate: salesReport.docDate,
         editedOn: new Date(),
