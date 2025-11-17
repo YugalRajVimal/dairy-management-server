@@ -93,13 +93,13 @@ class VendorController {
         edited: !!report.edited,
         history: (report.history || []).map((h) => ({
           "DOC DATE": formatDate(h.docDate),
-          "SHIFT": h.shift || "",
+          SHIFT: h.shift || "",
           "VLC CODE": h.vlcUploaderCode || "",
           "VLC NAME": h.vlcName || "",
           "MILK WEIGHT (Ltr)": h.milkWeightLtr ?? "",
           "FAT %": h.fatPercentage ?? "",
           "SNF %": h.snfPercentage ?? "",
-          editedOn: h.editedOn ? formatDate(h.editedOn) : "",
+          "EDITED ON": h.editedOn ? formatDate(h.editedOn) : "",
         })),
       }));
 
