@@ -143,7 +143,27 @@ class VendorController {
         docDate: 1,
       });
 
-      return res.status(200).json({ success: true, data: salesReports });
+      // Format with custom keys for each report
+      const formattedReports = salesReports.map((report) => ({
+        docDate: report.docDate
+          ? report.docDate.toISOString().split("T")[0]
+          : "",
+        vlcUploaderCode: report.vlcUploaderCode || "",
+        itemCode: report.itemCode || "",
+        itemName: report.itemName || "",
+        quantity: report.quantity ?? "",
+        edited: !!report.edited,
+        history: (report.history || []).map((h) => ({
+          "DOC DATE": h.docDate ? h.docDate.toISOString().split("T")[0] : "",
+          "VLC CODE": h.vlcUploaderCode || "",
+          "ITEM CODE": h.itemCode || "",
+          "ITEM NAME": h.itemName || "",
+          QUANTITY: h.quantity ?? "",
+          "EDITED ON": h.editedOn ? h.editedOn.toISOString().split("T")[0] : "",
+        })),
+      }));
+
+      return res.status(200).json({ success: true, data: formattedReports });
     } catch (error) {
       console.error("Error fetching vendor sales report:", error);
       return res
