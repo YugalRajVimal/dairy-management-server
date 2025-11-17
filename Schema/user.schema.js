@@ -7,7 +7,7 @@ const userSchema = new mongoose.Schema(
     vendorId: { type: String, unique: true, sparse: true },
     supervisorId: { type: String, unique: true, sparse: true },
     phoneNo: { type: String, required: true },
-    email: { type: String, required: true },
+    email: { type: String, unique: true, required: true },
     role: {
       type: String,
       enum: ["Admin", "SubAdmin", "Vendor", "Supervisor"], // Removed leading comma
@@ -24,9 +24,9 @@ const userSchema = new mongoose.Schema(
       unique: true,
     },
     route: {
-      type: Number,
+      type: mongoose.Schema.Types.Mixed,
     },
-    supervisorRoutes: [{ type: Number }],
+    supervisorRoutes: [{ type: mongoose.Schema.Types.Mixed }],
     otp: {
       type: String,
     },

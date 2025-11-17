@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const routesSchema = new mongoose.Schema(
   {
     route: {
-      type: Number,
+      type: mongoose.Schema.Types.Mixed, // can be String or Number
       required: true,
     },
   },

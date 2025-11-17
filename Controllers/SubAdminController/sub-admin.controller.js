@@ -119,26 +119,41 @@ class SubAdminController {
     // Trim string fields and convert email to lowercase
     if (typeof name === "string") name = name.trim();
     if (typeof vendorId === "string") vendorId = vendorId.trim();
-    if (typeof email === "string") email = email.trim().toLowerCase(); // Convert email to lowercase
+    if (typeof email === "string") email = email.trim().toLowerCase();
     if (typeof phoneNumber === "string") phoneNumber = phoneNumber.trim();
     if (typeof addressLine === "string") addressLine = addressLine.trim();
     if (typeof city === "string") city = city.trim();
     if (typeof state === "string") state = state.trim();
     if (typeof pincode === "string") pincode = pincode.trim();
 
-    // Ensure route is an integer (parse from string/number if needed)
-    if (typeof route === "string" && route.trim() !== "") {
-      route = parseInt(route, 10);
-    }
-    if (typeof route === "number" && !isNaN(route)) {
-      // OK
-    } else {
+    // Route: must be present as string or number, and not empty/null/undefined
+    if (
+      typeof route !== "string" &&
+      typeof route !== "number"
+    ) {
       return res.status(400).json({
-        message: "Route is required and must be a valid integer.",
+        message: "Route is required and must be a string or a number.",
       });
     }
+    if (
+      (typeof route === "string" && route.trim() === "") ||
+      route === null
+    ) {
+      return res.status(400).json({
+        message: "Route is required and cannot be empty.",
+      });
+    }
+    // To avoid matching number-string mismatch in MongoDB, if route is numeric string, coerce to number type
+    if (typeof route === "string" && /^\d+$/.test(route.trim())) {
+      route = route.trim();
+      const numericRoute = Number(route);
+      // If route is all-digits, allow both string and number, store as number for uniformity, but keep original if non-numeric
+      route = isNaN(numericRoute) ? route : numericRoute;
+    } else if (typeof route === "string") {
+      route = route.trim();
+    }
 
-    // Validate presence and type for all fields, including route as integer
+    // Validate presence and type for all fields (except route, which may be string or number)
     if (
       !name ||
       typeof name !== "string" ||
@@ -156,11 +171,10 @@ class SubAdminController {
       typeof state !== "string" ||
       !pincode ||
       typeof pincode !== "string" ||
-      typeof route !== "number" ||
-      isNaN(route)
+      !(typeof route === "string" ? route.trim().length > 0 : true) // disallow empty route string
     ) {
       return res.status(400).json({
-        message: "All fields are required. Route must be a valid integer.",
+        message: "All fields are required. Route must be a string or a number and non-empty.",
       });
     }
 
@@ -171,8 +185,8 @@ class SubAdminController {
       return res.status(400).json({ message: "Invalid email format." });
     }
 
-    // Phone number validation (e.g., 10 digits, numeric)
-    const phoneRegex = /^(\+\d{1,4}\s*)?\d{10}$/; // Allows an optional country code (e.g., +1, +91) followed by 10 digits
+    // Phone number validation (e.g., 10 digits, numeric, optionally country code)
+    const phoneRegex = /^(\+\d{1,4}\s*)?\d{10}$/;
     if (!phoneRegex.test(phoneNumber)) {
       return res.status(400).json({
         message:
@@ -181,14 +195,14 @@ class SubAdminController {
     }
 
     // Pincode validation (e.g., 6 digits, numeric)
-    const pincodeRegex = /^\d{6}$/; // Assuming 6-digit pincodes
+    const pincodeRegex = /^\d{6}$/;
     if (!pincodeRegex.test(pincode)) {
       return res
         .status(400)
         .json({ message: "Invalid pincode format. Must be 6 digits." });
     }
 
-    const vendorIdRegex = /^\d{6}$/; // Assuming 6-digit vendorIds
+    const vendorIdRegex = /^\d{6}$/;
     if (!vendorIdRegex.test(vendorId)) {
       return res
         .status(400)
@@ -198,20 +212,19 @@ class SubAdminController {
     try {
       // Check if a vendor with this email already exists
       const existingVendor = await UserModel.findOne({
-        email, // Use the lowercase email for lookup
-        role: "Vendor",
+        email,
       });
 
       if (existingVendor) {
         return res
           .status(409)
-          .json({ message: "Vendor with this email already exists." });
+          .json({ message: "A User with this email already exists." });
       }
 
       // Check if a vendor with this vendorId already exists
       const existingVendorWithId = await UserModel.findOne({
         vendorId,
-        role: "Vendor", // Assuming vendorId is unique for Vendors
+        role: "Vendor",
       });
 
       if (existingVendorWithId) {
@@ -220,8 +233,21 @@ class SubAdminController {
           .json({ message: "Vendor with this vendor ID already exists." });
       }
 
-      // Route must exist and be a number
-      const existingRoute = await RoutesModel.findOne({ route });
+      // Route must exist as either string or number in RoutesModel
+      let existingRoute;
+      if (typeof route === "number") {
+        existingRoute = await RoutesModel.findOne({
+          $or: [{ route: route }, { route: route.toString() }],
+        });
+      } else {
+        // route is string
+        // try both original string and its number version if numeric
+        const numRoute = /^\d+$/.test(route) ? Number(route) : null;
+        existingRoute = await RoutesModel.findOne({
+          $or: [{ route: route }, ...(numRoute !== null ? [{ route: numRoute }] : [])],
+        });
+      }
+
       if (!existingRoute) {
         return res.status(400).json({
           message:
@@ -229,11 +255,11 @@ class SubAdminController {
         });
       }
 
-      // Create a new vendor instance, include the route (integer)
+      // Create a new vendor instance, include the route (string or number)
       const newVendor = new UserModel({
         name,
         vendorId,
-        email, // Use the lowercase email
+        email,
         phoneNo: phoneNumber,
         role: "Vendor",
         otp: null,
@@ -245,7 +271,7 @@ class SubAdminController {
           pincode,
         },
         onboardedBy: req.user.id,
-        route, // Store the route as integer at the root level
+        route, // Store the route as string or number at the root level
       });
 
       // Save the new vendor to the database
@@ -256,7 +282,7 @@ class SubAdminController {
       const mailMessage = `Dear ${name},\n\nYour Vendor account has been created. Please use your email to log into your account:\n\nRegards,\nABC Company Team`;
 
       try {
-        await sendMail(email, mailSubject, mailMessage); // Use the lowercase email
+        await sendMail(email, mailSubject, mailMessage);
       } catch (mailError) {
         console.error("Error sending mail to vendor:", mailError);
         // Optionally: do not block onboarding if mail fails
@@ -341,7 +367,7 @@ class SubAdminController {
       city,
       state,
       pincode,
-      routes, // Expecting routes as array
+      routes, // Expecting routes as array (can be string or number)
     } = req.body;
 
     // Trim string fields and convert email to lowercase
@@ -381,15 +407,30 @@ class SubAdminController {
       });
     }
 
-    // Route numbers must be numbers, filter/validate
+    // Accept routes as string or number; remove blanks and normalize whitespace
     routes = routes
-      .map((r) => Number(r))
-      .filter((r) => typeof r === "number" && !isNaN(r));
+      .map((r) => {
+        if (typeof r === "string") {
+          const trimmed = r.trim();
+          // If blank after trimming, skip it
+          if (!trimmed) return null;
+          // Try to convert to number if it's numeric, else use as string
+          const maybeNum = Number(trimmed);
+          return !isNaN(maybeNum) && trimmed === maybeNum.toString()
+            ? maybeNum
+            : trimmed;
+        } else if (typeof r === "number") {
+          return r;
+        }
+        // else skip (not string or number)
+        return null;
+      })
+      .filter((r) => r !== null && r !== undefined && r !== "");
 
     if (routes.length === 0) {
       return res.status(400).json({
         message:
-          "Supervisor must be assigned at least one valid numeric route.",
+          "Supervisor must be assigned at least one valid route (number or string).",
       });
     }
 
@@ -425,13 +466,13 @@ class SubAdminController {
       // Check if a supervisor with this email already exists
       const existingSupervisor = await UserModel.findOne({
         email,
-        role: "Supervisor",
+        // role: "Supervisor",
       });
 
       if (existingSupervisor) {
         return res
           .status(409)
-          .json({ message: "Supervisor with this email already exists." });
+          .json({ message: "A User with this email already exists." });
       }
 
       // Check if a supervisor with this supervisorId already exists
@@ -487,7 +528,7 @@ class SubAdminController {
           state,
           pincode,
         },
-        supervisorRoutes: routes, // Save array of route numbers!
+        supervisorRoutes: routes, // Save array of route numbers or strings!
         onboardedBy: req.user.id,
       });
 

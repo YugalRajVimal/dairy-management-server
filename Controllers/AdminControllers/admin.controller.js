@@ -144,13 +144,13 @@ class AdminController {
       // Check if a sub-admin with this email already exists
       const existingSubAdmin = await UserModel.findOne({
         email, // Use the lowercase email for lookup
-        role: "SubAdmin",
+        // role: "SubAdmin",
       });
 
       if (existingSubAdmin) {
         return res
           .status(409)
-          .json({ message: "Sub-admin with this email already exists." });
+          .json({ message: "A User with this email already exists." });
       }
 
       // Generate a 6-digit OTP for the new sub-admin
