@@ -18,7 +18,7 @@ class VendorController {
 
       const vendorProfile = await UserModel.findOne(
         { vendorId },
-        "name email phoneNumber address vendorId route onboardedBy createdAt updatedAt"
+        "name email phoneNo address vendorId route onboardedBy createdAt updatedAt"
       );
 
       if (!vendorProfile) {
