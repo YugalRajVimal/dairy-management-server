@@ -15,12 +15,7 @@ app.use(
   })
 );
 
-// Handle preflight requests explicitly
-// app.options("/*", cors());
 app.use(cors());
-
-// Handle preflight requests explicitly
-// app.options("*", cors());
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));

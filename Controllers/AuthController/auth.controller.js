@@ -107,8 +107,6 @@ class AuthController {
     try {
       let { email } = req.body;
 
-      
-
       if (!email) {
         return res.status(400).json({ message: "Email and role are required" });
       }
@@ -155,12 +153,10 @@ class AuthController {
 
   vendorSupervisorVerifyAccount = async (req, res) => {
     try {
-      let { email, otp} = req.body;
+      let { email, otp } = req.body;
 
       if (!email || !otp) {
-        return res
-          .status(400)
-          .json({ message: "Email, OTP, are required" });
+        return res.status(400).json({ message: "Email, OTP, are required" });
       }
 
       email = email.trim().toLowerCase();
@@ -191,7 +187,11 @@ class AuthController {
 
       return res
         .status(200)
-        .json({ message: "Account verified successfully", token });
+        .json({
+          message: "Account verified successfully",
+          token,
+          role: user.role,
+        });
     } catch (error) {
       console.error("VerifyAccount Error:", error);
       return res.status(500).json({ message: "Internal Server Error" });
