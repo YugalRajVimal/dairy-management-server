@@ -38,26 +38,29 @@ class SupervisorController {
     }
 
     try {
-      // First, find the supervisor's route
-      const supervisor = await UserModel.findById(req.user.id).select("supervisorRoutes");
+      // Get full supervisor profile, excluding sensitive fields
+      const supervisor = await UserModel.findById(req.user.id)
+        .select("-password -otp -otpExpires -__v");
 
       if (!supervisor || !Array.isArray(supervisor.supervisorRoutes) || supervisor.supervisorRoutes.length === 0) {
         return res.status(400).json({
           message: "Supervisor's route information not found.",
         });
       }
+
       // Count all vendors whose 'route' is in any of supervisor's routes
       const allVendorsCount = await UserModel.countDocuments({
         role: "Vendor",
         route: { $in: supervisor.supervisorRoutes },
       });
 
-      // Sum up all the milkWeightLtr uploaded by SubAdmin
-      // Find all vendors whose route matches the supervisor's route, then sum milkWeightLtr where vlcUploaderCode is one of those vendorIds
+      // Find all vendors whose route is in supervisor.supervisorRoutes, get their vendorIds
       const vendorIds = await UserModel.find({
         role: "Vendor",
-        route: supervisor.route,
+        route: { $in: supervisor.supervisorRoutes },
       }).distinct("vendorId");
+
+      // Sum up all the milkWeightLtr uploaded by these vendors
       const totalMilkWeightLtr = await MilkReportModel.aggregate([
         { $match: { vlcUploaderCode: { $in: vendorIds } } },
         { $group: { _id: null, total: { $sum: "$milkWeightLtr" } } },
@@ -70,6 +73,8 @@ class SupervisorController {
         message: "Dashboard details fetched successfully.",
         allVendorsCount,
         milkWeightSum,
+        supervisorProfile: supervisor,
+        supervisorRoutes: supervisor.supervisorRoutes,
       });
     } catch (error) {
       console.error("Error fetching dashboard details:", error);
