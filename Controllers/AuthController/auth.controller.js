@@ -48,8 +48,7 @@ class AuthController {
           vendorId: user.vendorId || null,
           supervisorId: user.supervisorId || null,
         },
-        process.env.JWT_SECRET,
-        { expiresIn: "24h" }
+        process.env.JWT_SECRET
       );
 
       return res
@@ -181,8 +180,7 @@ class AuthController {
           vendorId: user.vendorId || null,
           supervisorId: user.supervisorId || null,
         },
-        process.env.JWT_SECRET,
-        { expiresIn: "24h" }
+        process.env.JWT_SECRET
       );
 
       return res
