@@ -280,7 +280,7 @@ class SupervisorController {
   // };
 
   // ✅ Get milk, sales, and assets report of a Vendor by VendorId
-  getVendorReportsByVendorId = async (req, res) => {
+    getVendorReportsByVendorId = async (req, res) => {
     // Helper function to format date
     const formatDate = (date) => {
       if (!date) return "";
@@ -301,7 +301,8 @@ class SupervisorController {
       }
 
       const { vendorId } = req.params; // expects :vendorId in the route
-
+      const { startDate, endDate } = req.query; // Date filters for DOC DATE
+      
       if (!vendorId) {
         return res
           .status(400)
@@ -317,14 +318,39 @@ class SupervisorController {
         return res.status(404).json({ message: "Vendor not found" });
       }
 
-      // Fetch Milk Reports for this vendorId
+      // Prepare date filter for Milk and Sales Reports
+      let milkDocDateFilter = {};
+      let salesDocDateFilter = {};
+
+      if (startDate || endDate) {
+        milkDocDateFilter.docDate = {};
+        salesDocDateFilter.docDate = {};
+
+        if (startDate) {
+          milkDocDateFilter.docDate.$gte = new Date(startDate);
+          salesDocDateFilter.docDate.$gte = new Date(startDate);
+        }
+        if (endDate) {
+          // End date should include the entire end day, so set time to 23:59:59.999
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          milkDocDateFilter.docDate.$lte = end;
+          salesDocDateFilter.docDate.$lte = end;
+        }
+
+        // Remove if filter object is empty
+        if (Object.keys(milkDocDateFilter.docDate).length === 0) delete milkDocDateFilter.docDate;
+        if (Object.keys(salesDocDateFilter.docDate).length === 0) delete salesDocDateFilter.docDate;
+      }
+
+      // Fetch Milk Reports for this vendorId, filter by DOC DATE if provided
       const milkReportsRaw = await MilkReportModel.find({
         vlcUploaderCode: vendorId,
+        ...milkDocDateFilter,
       }).sort({ uploadedOn: -1 });
 
       const milkReports = milkReportsRaw.map((report) => ({
         // Use custom headers for milk report
-
         "DOC DATE": formatDate(report.docDate),
         SHIFT: report.shift || "",
         "VLC CODE": report.vlcUploaderCode || "",
@@ -345,9 +371,10 @@ class SupervisorController {
         })),
       }));
 
-      // Fetch Sales Reports for this vendorId
+      // Fetch Sales Reports for this vendorId, filter by DOC DATE if provided
       const salesReportsRaw = await SalesReportModel.find({
         vlcUploaderCode: vendorId,
+        ...salesDocDateFilter,
       }).sort({ uploadedOn: -1 });
 
       const salesReports = salesReportsRaw.map((report) => ({
@@ -367,7 +394,7 @@ class SupervisorController {
         })),
       }));
 
-      // Fetch Assets Reports for this vendorId (minimal formatting for consistency)
+      // Fetch Assets Reports for this vendorId (minimal formatting for consistency, not filtered by DOC DATE)
       const assetsReportsRaw = await AssetsReportModel.find({
         vlcCode: vendorId,
       }).sort({ uploadedOn: -1 });
