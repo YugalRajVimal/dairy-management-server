@@ -82,6 +82,104 @@ class SupervisorController {
     }
   };
 
+  /**
+   * Get milk reports uploaded by vendors assigned to a supervisor, filtered by date range (inclusive).
+   * Query params:
+   *   - startDate: (optional) Filter from this date (YYYY-MM-DD)
+   *   - endDate: (optional) Filter up to this date (YYYY-MM-DD)
+   *   - page: (optional) Page number for pagination (default 1)
+   *   - limit: (optional) Results per page (default 10)
+   */
+   getMilkReports = async (req, res) => {
+    if (req.user.role !== "Supervisor") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Supervisor can perform this action.",
+      });
+    }
+
+    try {
+      const { startDate, endDate, page = 1, limit = 10 } = req.query;
+      const pageNumber = parseInt(page) || 1;
+      const pageLimit = parseInt(limit) || 10;
+      const skip = (pageNumber - 1) * pageLimit;
+
+      // Find supervisor profile and get vendorIds
+      const supervisor = await UserModel.findById(req.user.id).select("supervisorRoutes");
+      if (
+        !supervisor ||
+        !Array.isArray(supervisor.supervisorRoutes) ||
+        supervisor.supervisorRoutes.length === 0
+      ) {
+        return res.status(400).json({
+          message: "Supervisor's route information not found.",
+        });
+      }
+
+      // Get vendorIds for supervisor routes
+      const vendorIds = await UserModel.find({
+        role: "Vendor",
+        route: { $in: supervisor.supervisorRoutes },
+      }).distinct("vendorId");
+
+      // Build milk report query: filter by vendors
+      const milkReportQuery = {
+        vlcUploaderCode: { $in: vendorIds },
+      };
+
+      // Date filter on docDate (instead of date)
+      let aggregationMatch = {
+        vlcUploaderCode: { $in: vendorIds },
+      };
+      if (startDate || endDate) {
+        milkReportQuery.docDate = {};
+        aggregationMatch.docDate = {};
+        if (startDate) {
+          milkReportQuery.docDate.$gte = new Date(startDate);
+          aggregationMatch.docDate.$gte = new Date(startDate);
+        }
+        if (endDate) {
+          // Set time to end of the day for inclusive filter
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          milkReportQuery.docDate.$lte = end;
+          aggregationMatch.docDate.$lte = end;
+        }
+        // Cleanup if not set
+        if (Object.keys(milkReportQuery.docDate).length === 0) delete milkReportQuery.docDate;
+        if (Object.keys(aggregationMatch.docDate).length === 0) delete aggregationMatch.docDate;
+      }
+
+      // Query reports with pagination, sorted by docDate
+      const milkReports = await MilkReportModel.find(milkReportQuery)
+        .sort({ docDate: -1 })
+        .skip(skip)
+        .limit(pageLimit);
+
+      const totalReports = await MilkReportModel.countDocuments(milkReportQuery);
+
+      // Get milkWeightSum for selected date range or all if none specified
+      const totalMilkWeight = await MilkReportModel.aggregate([
+        { $match: aggregationMatch },
+        { $group: { _id: null, total: { $sum: "$milkWeightLtr" } } },
+      ]);
+
+      const milkWeightSum = totalMilkWeight.length > 0 ? totalMilkWeight[0].total : 0;
+
+      res.status(200).json({
+        message: "Milk reports fetched successfully.",
+        reports: milkReports,
+        milkWeightSum,
+        page: pageNumber,
+        limit: pageLimit,
+        total: totalReports,
+        totalPages: Math.ceil(totalReports / pageLimit),
+      });
+    } catch (error) {
+      console.error("Error fetching milk reports by date:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
   getAllVendors = async (req, res) => {
     if (req.user.role !== "Supervisor") {
       return res.status(403).json({

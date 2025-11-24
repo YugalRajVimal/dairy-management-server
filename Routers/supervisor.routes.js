@@ -19,6 +19,11 @@ supervisorRouter.get("/get-dashboard-details", jwtAuth, (req, res) => {
   supervisorController.getDashboardDetails(req, res);
 });
 
+supervisorRouter.get("/get-milk-reports", jwtAuth, (req, res) => {
+  supervisorController.getMilkReports(req,res);
+});
+
+
 supervisorRouter.get("/get-all-vendors", jwtAuth, (req, res) => {
   supervisorController.getAllVendors(req, res);
 });
