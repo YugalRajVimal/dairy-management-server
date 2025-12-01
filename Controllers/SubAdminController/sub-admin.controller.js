@@ -567,6 +567,212 @@ class SubAdminController {
     }
   };
 
+  updateSupervisor = async (req, res) => {
+    const { id } = req.params;
+    if (req.user.role !== "SubAdmin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Sub Admins can perform this action.",
+      });
+    }
+
+    try {
+      const {
+        name,
+        email,
+        supervisorId,
+        phoneNo,
+        address,
+        supervisorRoutes, // Array of route numbers or strings
+      } = req.body;
+
+      if (!id) {
+        return res.status(400).json({ message: "Supervisor ID is required." });
+      }
+
+      // Validate required fields (as in onboardSupervisor, require all except id to update)
+      // Note: To support partial updates, only validate fields if they're being updated.
+      if (name !== undefined && (!name || typeof name !== "string")) {
+        return res.status(400).json({ message: "Supervisor name is required and must be a string." });
+      }
+      if (email !== undefined) {
+        if (!email || typeof email !== "string") {
+          return res.status(400).json({ message: "Supervisor email is required and must be a string." });
+        }
+        // Email format validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          return res.status(400).json({ message: "Invalid email format." });
+        }
+      }
+      if (supervisorId !== undefined && (!supervisorId || typeof supervisorId !== "string")) {
+        return res.status(400).json({ message: "Supervisor ID is required and must be a string." });
+      }
+      if (phoneNo !== undefined) {
+        if (!phoneNo || typeof phoneNo !== "string") {
+          return res.status(400).json({ message: "Phone Number is required and must be a string." });
+        }
+        // Accept phone numbers that are either:
+        // - 10 digits (Indian mobile, e.g. 9876543210)
+        // - start with +91 and followed by exactly 10 digits (e.g. +919876543210)
+        if (
+          !/^(?:\+91)?[6-9]\d{9}$/.test(phoneNo)
+        ) {
+          return res.status(400).json({ message: "Invalid phone number format. Please enter a valid 10-digit number with or without +91." });
+        }
+      }
+      if (address !== undefined) {
+        if (typeof address !== "object" || address === null) {
+          return res.status(400).json({ message: "Address must be an object." });
+        }
+        // Validate all address fields only if they are being updated (partial update support)
+        if ('addressLine' in address && (address.addressLine === undefined || typeof address.addressLine !== "string")) {
+          return res.status(400).json({ message: "Address line must be a string." });
+        }
+        if ('city' in address && (address.city === undefined || typeof address.city !== "string")) {
+          return res.status(400).json({ message: "City must be a string." });
+        }
+        if ('state' in address && (address.state === undefined || typeof address.state !== "string")) {
+          return res.status(400).json({ message: "State must be a string." });
+        }
+        if ('pincode' in address && (address.pincode === undefined || typeof address.pincode !== "string")) {
+          return res.status(400).json({ message: "Pincode must be a string." });
+        }
+      }
+      if (supervisorRoutes !== undefined) {
+        if (!Array.isArray(supervisorRoutes)) {
+          return res.status(400).json({ message: "supervisorRoutes must be an array." });
+        }
+        if (supervisorRoutes.length === 0) {
+          return res.status(400).json({ message: "At least one route must be assigned to the supervisor." });
+        }
+        // Each element must be a string or a number, not undefined/null
+        for (let i = 0; i < supervisorRoutes.length; i++) {
+          const val = supervisorRoutes[i];
+          if (val === undefined || val === null || (typeof val !== "string" && typeof val !== "number")) {
+            return res.status(400).json({ message: "Each route must be a string or a number." });
+          }
+        }
+      }
+
+      // Find the supervisor by id and onboardedBy & role, to ensure subadmin only edits their own
+      const supervisor = await UserModel.findOne({
+        _id: id,
+        onboardedBy: req.user.id,
+        role: "Supervisor",
+      });
+
+      if (!supervisor) {
+        return res.status(404).json({ message: "Supervisor not found." });
+      }
+
+      // --- Uniqueness Checks: email, supervisorId, phoneNo ---
+      if (email !== undefined && email !== supervisor.email) {
+        const existsWithSameEmail = await UserModel.findOne({
+          _id: { $ne: id },
+          onboardedBy: req.user.id,
+          role: "Supervisor",
+          email: email,
+        });
+        if (existsWithSameEmail) {
+          return res.status(400).json({ message: "A supervisor with this email already exists." });
+        }
+      }
+      if (supervisorId !== undefined && supervisorId !== supervisor.supervisorId) {
+        const existsWithSameSupervisorId = await UserModel.findOne({
+          _id: { $ne: id },
+          onboardedBy: req.user.id,
+          role: "Supervisor",
+          supervisorId: supervisorId,
+        });
+        if (existsWithSameSupervisorId) {
+          return res.status(400).json({ message: "A supervisor with this Supervisor ID already exists." });
+        }
+      }
+
+      // --- END uniqueness checks ---
+
+      // Check if any of the routes in supervisorRoutes are already assigned to another supervisor
+      if (Array.isArray(supervisorRoutes) && supervisorRoutes.length > 0) {
+        // Use both number and string representations for route conflict checking
+        // We'll collect both string and number versions to check conflicts against all route forms stored in DB
+        const routeSet = new Set();
+        supervisorRoutes.forEach(r => {
+          routeSet.add(String(r));
+          if (!isNaN(Number(r))) {
+            routeSet.add(Number(r));
+          }
+        });
+
+        const conflictSupervisors = await UserModel.find({
+          _id: { $ne: id }, // Exclude the current supervisor being updated
+          onboardedBy: req.user.id,
+          role: "Supervisor",
+          supervisorRoutes: { $in: Array.from(routeSet) }
+        });
+
+        // Find which specific routes are in conflict (assigned to other supervisors)
+        let conflictingRoutes = [];
+        conflictSupervisors.forEach(sup => {
+          if (Array.isArray(sup.supervisorRoutes)) {
+            for (let route of sup.supervisorRoutes) {
+              if (routeSet.has(route) || routeSet.has(String(route)) || routeSet.has(Number(route))) {
+                conflictingRoutes.push(route);
+              }
+            }
+          }
+        });
+
+        // Remove duplicates, just in case
+        conflictingRoutes = [...new Set(conflictingRoutes)];
+
+        if (conflictingRoutes.length > 0) {
+          return res.status(400).json({
+            message: `Some route(s) are already assigned to another supervisor: ${conflictingRoutes.join(", ")}`
+          });
+        }
+      }
+
+      // Only update supplied fields
+      if (name !== undefined) supervisor.name = name;
+      if (email !== undefined) supervisor.email = email;
+      if (supervisorId !== undefined) supervisor.supervisorId = supervisorId;
+      if (phoneNo !== undefined) supervisor.phoneNo = phoneNo;
+      if (address !== undefined) {
+        supervisor.address = {
+          ...supervisor.address,
+          ...(address.addressLine !== undefined && { addressLine: address.addressLine }),
+          ...(address.city !== undefined && { city: address.city }),
+          ...(address.state !== undefined && { state: address.state }),
+          ...(address.pincode !== undefined && { pincode: address.pincode }),
+        };
+      }
+      if (Array.isArray(supervisorRoutes)) {
+        // Store as string if not a number, otherwise as number
+        supervisor.supervisorRoutes = supervisorRoutes.map((r) =>
+          (typeof r === "string" && !isNaN(Number(r))) ? Number(r) : r
+        );
+      }
+
+      await supervisor.save();
+
+      res.status(200).json({
+        message: "Supervisor updated successfully.",
+        supervisor: {
+          id: supervisor._id,
+          name: supervisor.name,
+          supervisorId: supervisor.supervisorId,
+          email: supervisor.email,
+          phoneNo: supervisor.phoneNo,
+          address: supervisor.address,
+          supervisorRoutes: supervisor.supervisorRoutes,
+        },
+      });
+    } catch (error) {
+      console.error("Error updating supervisor:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  }
+
   getAllSupervisors = async (req, res) => {
     if (req.user.role !== "SubAdmin") {
       return res.status(403).json({

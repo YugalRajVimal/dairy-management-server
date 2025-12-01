@@ -38,6 +38,11 @@ subAdminRouter.post("/onboard-supervisor", jwtAuth, (req, res) => {
   subAdminController.onboardSupervisor(req, res);
 });
 
+subAdminRouter.put("/update-supervisor/:id", jwtAuth, (req, res) => {
+  subAdminController.updateSupervisor(req, res);
+});
+
+
 subAdminRouter.get("/get-all-supervisors", jwtAuth, (req, res) => {
   subAdminController.getAllSupervisors(req, res);
 });
