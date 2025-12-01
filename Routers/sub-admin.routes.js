@@ -26,6 +26,11 @@ subAdminRouter.post("/onboard-vendor", jwtAuth, (req, res) => {
   subAdminController.onboardVendor(req, res);
 });
 
+subAdminRouter.put("/update-vendor/:id", jwtAuth, (req, res) => {
+  subAdminController.updateVendor(req, res);
+});
+
+
 subAdminRouter.get("/get-all-vendors", jwtAuth, (req, res) => {
   subAdminController.getAllVendors(req, res);
 });

@@ -308,6 +308,212 @@ class SubAdminController {
     }
   };
 
+  updateVendor = async (req, res) => {
+    // Only SubAdmin can update vendors
+    if (req.user.role !== "SubAdmin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Sub Admins can perform this action.",
+      });
+    }
+
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ message: "Vendor ID is required." });
+    }
+
+    try {
+      const {
+        name,
+        email,
+        vendorId,
+        phoneNo,
+        address,
+        route, // Route number or string
+      } = req.body;
+
+      // Find existing vendor
+      const vendor = await UserModel.findOne({
+        _id: id,
+        onboardedBy: req.user.id,
+        role: "Vendor",
+      });
+
+      if (!vendor) {
+        return res.status(404).json({ message: "Vendor not found." });
+      }
+
+      // Validate fields
+      if (name !== undefined && (!name || typeof name !== "string")) {
+        return res
+          .status(400)
+          .json({ message: "Name is required and must be a string." });
+      }
+      if (email !== undefined) {
+        if (!email || typeof email !== "string") {
+          return res
+            .status(400)
+            .json({ message: "Email is required and must be a string." });
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          return res.status(400).json({ message: "Invalid email format." });
+        }
+        // Check for email conflict with other vendors
+        const emailConflict = await UserModel.findOne({
+          _id: { $ne: vendor._id },
+          onboardedBy: req.user.id,
+          role: "Vendor",
+          email: email,
+        });
+        if (emailConflict) {
+          return res.status(400).json({
+            message: `Email "${email}" is already assigned to another vendor.`,
+          });
+        }
+      }
+      if (vendorId !== undefined) {
+        if (!vendorId || typeof vendorId !== "string") {
+          return res
+            .status(400)
+            .json({ message: "Vendor ID is required and must be a string." });
+        }
+        // Vendor ID should be exactly 6 digits
+        if (!/^\d{6}$/.test(vendorId)) {
+          return res
+            .status(400)
+            .json({ message: "Vendor ID must be exactly 6 digits." });
+        }
+        // Check for vendorId conflict with other vendors
+        const vendorIdConflict = await UserModel.findOne({
+          _id: { $ne: vendor._id },
+          onboardedBy: req.user.id,
+          role: "Vendor",
+          vendorId: vendorId,
+        });
+        if (vendorIdConflict) {
+          return res.status(400).json({
+            message: `Vendor ID "${vendorId}" is already assigned to another vendor.`,
+          });
+        }
+      }
+      if (phoneNo !== undefined) {
+        if (!phoneNo || typeof phoneNo !== "string") {
+          return res
+            .status(400)
+            .json({ message: "Phone Number is required and must be a string." });
+        }
+        // 10 digits or +91 followed by 10 digits
+        if (
+          !(
+            /^\d{10}$/.test(phoneNo) ||
+            (/^(\+91)\d{10}$/.test(phoneNo) && phoneNo.length === 13)
+          )
+        ) {
+          return res.status(400).json({
+            message:
+              "Phone Number must be 10 digits or in the format +91XXXXXXXXXX.",
+          });
+        }
+      }
+      if (address !== undefined) {
+        if (
+          typeof address !== "object" ||
+          address === null ||
+          (!address.addressLine && !address.city && !address.state && !address.pincode)
+        ) {
+          return res.status(400).json({
+            message:
+              "If updating address, provide at least one field: addressLine, city, state, or pincode.",
+          });
+        }
+      }
+      if (route !== undefined) {
+        if (
+          route === null ||
+          route === "" ||
+          (typeof route !== "string" && typeof route !== "number")
+        ) {
+          return res
+            .status(400)
+            .json({ message: "Route must be a string or number." });
+        }
+
+        // Check if the route exists in the master route schema
+        let normalizedRoute;
+        if (typeof route === "string" && /^\d+$/.test(route)) {
+          // convert numeric strings to number to support number or string matches
+          normalizedRoute = Number(route);
+        } else {
+          normalizedRoute = route;
+        }
+        // Look for the route in RoutesModel
+        const foundRoute = await RoutesModel.findOne({
+          $or: [
+            { route: normalizedRoute },
+            { route: String(normalizedRoute) },
+            { route: Number(normalizedRoute) },
+          ],
+        });
+        if (!foundRoute) {
+          return res.status(400).json({
+            message: `Route "${route}" does not exist in the master route schema.`,
+          });
+        }
+
+        // Check if the same route is already assigned to any other vendor
+        const existingVendorOnRoute = await UserModel.findOne({
+          _id: { $ne: vendor._id },
+          onboardedBy: req.user.id,
+          role: "Vendor",
+          $or: [
+            { route: normalizedRoute },
+            { route: String(normalizedRoute) },
+            { route: Number(normalizedRoute) },
+          ],
+        });
+        if (existingVendorOnRoute) {
+          return res.status(400).json({
+            message: `Route "${route}" is already assigned to another vendor.`,
+          });
+        }
+      }
+
+      // Apply updates, only those fields that are provided in body
+      if (name !== undefined) vendor.name = name;
+      if (email !== undefined) vendor.email = email;
+      if (vendorId !== undefined) vendor.vendorId = vendorId;
+      if (phoneNo !== undefined) vendor.phoneNo = phoneNo;
+      if (address !== undefined) {
+        vendor.address = {
+          ...vendor.address,
+          ...(address.addressLine !== undefined && { addressLine: address.addressLine }),
+          ...(address.city !== undefined && { city: address.city }),
+          ...(address.state !== undefined && { state: address.state }),
+          ...(address.pincode !== undefined && { pincode: address.pincode }),
+        };
+      }
+      if (route !== undefined) vendor.route = route;
+
+      await vendor.save();
+
+      res.status(200).json({
+        message: "Vendor updated successfully.",
+        vendor: {
+          id: vendor._id,
+          name: vendor.name,
+          vendorId: vendor.vendorId,
+          email: vendor.email,
+          phoneNo: vendor.phoneNo,
+          address: vendor.address,
+          route: vendor.route,
+        },
+      });
+    } catch (error) {
+      console.error("Error updating Vendor:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
   getAllVendors = async (req, res) => {
     if (req.user.role !== "SubAdmin") {
       return res.status(403).json({
@@ -604,8 +810,14 @@ class SubAdminController {
           return res.status(400).json({ message: "Invalid email format." });
         }
       }
-      if (supervisorId !== undefined && (!supervisorId || typeof supervisorId !== "string")) {
-        return res.status(400).json({ message: "Supervisor ID is required and must be a string." });
+      if (supervisorId !== undefined) {
+        if (!supervisorId || typeof supervisorId !== "string") {
+          return res.status(400).json({ message: "Supervisor ID is required and must be a string." });
+        }
+        // Validate supervisorId should be 6 digits
+        if (!/^\d{6}$/.test(supervisorId)) {
+          return res.status(400).json({ message: "Supervisor ID must be a 6-digit number." });
+        }
       }
       if (phoneNo !== undefined) {
         if (!phoneNo || typeof phoneNo !== "string") {
@@ -638,6 +850,7 @@ class SubAdminController {
           return res.status(400).json({ message: "Pincode must be a string." });
         }
       }
+      let normalizedSupervisorRoutes;
       if (supervisorRoutes !== undefined) {
         if (!Array.isArray(supervisorRoutes)) {
           return res.status(400).json({ message: "supervisorRoutes must be an array." });
@@ -646,11 +859,23 @@ class SubAdminController {
           return res.status(400).json({ message: "At least one route must be assigned to the supervisor." });
         }
         // Each element must be a string or a number, not undefined/null
-        for (let i = 0; i < supervisorRoutes.length; i++) {
-          const val = supervisorRoutes[i];
-          if (val === undefined || val === null || (typeof val !== "string" && typeof val !== "number")) {
-            return res.status(400).json({ message: "Each route must be a string or a number." });
+        normalizedSupervisorRoutes = supervisorRoutes.map((r) => {
+          if (r === undefined || r === null || (typeof r !== "string" && typeof r !== "number")) {
+            return false; // Mark as invalid, will check below
           }
+          // Normalize as string/number exactly for comparison against schema
+          if (typeof r === "string") {
+            const trimmed = r.trim();
+            // Try to convert numeric strings to number
+            if (!isNaN(Number(trimmed)) && trimmed === String(Number(trimmed))) {
+              return Number(trimmed);
+            }
+            return trimmed;
+          }
+          return r;
+        });
+        if (normalizedSupervisorRoutes.includes(false)) {
+          return res.status(400).json({ message: "Each route must be a string or a number." });
         }
       }
 
@@ -688,15 +913,40 @@ class SubAdminController {
           return res.status(400).json({ message: "A supervisor with this Supervisor ID already exists." });
         }
       }
-
       // --- END uniqueness checks ---
 
+      // Validate routes exist in schema route
+      if (Array.isArray(normalizedSupervisorRoutes) && normalizedSupervisorRoutes.length > 0) {
+        // Get all schema routes
+        const allSchemaRoutes = await RoutesModel.find({}).select("route -_id");
+        // Map all to both string and number forms for robust matching
+        const validRouteSet = new Set();
+        for (const r of allSchemaRoutes) {
+          if (r.route !== undefined && r.route !== null) {
+            validRouteSet.add(String(r.route));
+            // If it's a number (as a string), also add number (or vice versa)
+            if (!isNaN(Number(r.route))) {
+              validRouteSet.add(Number(r.route));
+            }
+          }
+        }
+        const notFoundRoutes = [];
+        for (const testR of normalizedSupervisorRoutes) {
+          if (!validRouteSet.has(testR) && !validRouteSet.has(String(testR)) && !validRouteSet.has(Number(testR))) {
+            notFoundRoutes.push(testR);
+          }
+        }
+        if (notFoundRoutes.length > 0) {
+          return res.status(400).json({
+            message: `Some route(s) do not exist in the master route list in schema: ${notFoundRoutes.join(", ")}`
+          });
+        }
+      }
+
       // Check if any of the routes in supervisorRoutes are already assigned to another supervisor
-      if (Array.isArray(supervisorRoutes) && supervisorRoutes.length > 0) {
-        // Use both number and string representations for route conflict checking
-        // We'll collect both string and number versions to check conflicts against all route forms stored in DB
+      if (Array.isArray(normalizedSupervisorRoutes) && normalizedSupervisorRoutes.length > 0) {
         const routeSet = new Set();
-        supervisorRoutes.forEach(r => {
+        normalizedSupervisorRoutes.forEach(r => {
           routeSet.add(String(r));
           if (!isNaN(Number(r))) {
             routeSet.add(Number(r));
@@ -704,7 +954,7 @@ class SubAdminController {
         });
 
         const conflictSupervisors = await UserModel.find({
-          _id: { $ne: id }, // Exclude the current supervisor being updated
+          _id: { $ne: id },
           onboardedBy: req.user.id,
           role: "Supervisor",
           supervisorRoutes: { $in: Array.from(routeSet) }
@@ -722,7 +972,6 @@ class SubAdminController {
           }
         });
 
-        // Remove duplicates, just in case
         conflictingRoutes = [...new Set(conflictingRoutes)];
 
         if (conflictingRoutes.length > 0) {
@@ -746,11 +995,8 @@ class SubAdminController {
           ...(address.pincode !== undefined && { pincode: address.pincode }),
         };
       }
-      if (Array.isArray(supervisorRoutes)) {
-        // Store as string if not a number, otherwise as number
-        supervisor.supervisorRoutes = supervisorRoutes.map((r) =>
-          (typeof r === "string" && !isNaN(Number(r))) ? Number(r) : r
-        );
+      if (Array.isArray(normalizedSupervisorRoutes)) {
+        supervisor.supervisorRoutes = normalizedSupervisorRoutes;
       }
 
       await supervisor.save();
