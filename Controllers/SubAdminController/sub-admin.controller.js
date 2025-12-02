@@ -1729,6 +1729,89 @@ class SubAdminController {
     }
   };
 
+  /**
+   * Bulk delete all milk reports for a given date and shift.
+   * Expects: req.body = { date: "YYYY-MM-DD" or date-string, shift: "" | "Morning" | "Evening" }
+   */
+  bulkDeleteMilkReports = async (req, res) => {
+    if (req.user.role !== "SubAdmin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Sub Admins can perform this action.",
+      });
+    }
+
+    try {
+      const { date, shift } = req.body;
+
+      // Validate fields
+      if (!date || !shift) {
+        return res.status(400).json({
+          error: "Both date and shift are required.",
+        });
+      }
+      const normalizedShift = shift === "Morning" || shift === "Evening" ? shift : null;
+      if (!normalizedShift) {
+        return res.status(400).json({
+          error: "Shift must be either 'Morning' or 'Evening'.",
+        });
+      }
+
+      // Parse date like docDate in the sales version
+      let dateObj;
+      if (typeof date === "string") {
+        // Accept YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY
+        let parts;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          // YYYY-MM-DD
+          parts = date.split("-");
+          dateObj = new Date(`${parts[0]}-${parts[1]}-${parts[2]}`);
+        } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(date)) {
+          // DD/MM/YYYY
+          parts = date.split("/");
+          dateObj = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+        } else if (/^\d{2}-\d{2}-\d{4}$/.test(date)) {
+          // DD-MM-YYYY
+          parts = date.split("-");
+          dateObj = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+        } else {
+          dateObj = new Date(date);
+        }
+      } else {
+        dateObj = new Date(date);
+      }
+      if (isNaN(dateObj.getTime())) {
+        return res.status(400).json({ error: "Invalid 'date' format." });
+      }
+
+      // Find all matching milk reports for the logged-in SubAdmin with that docDate (ignoring time) and shift
+      const startOfDay = new Date(dateObj.setHours(0, 0, 0, 0));
+      const endOfDay = new Date(dateObj.setHours(23, 59, 59, 999));
+
+      const query = {
+        uploadedBy: req.user.id,
+        shift: normalizedShift,
+        docDate: { $gte: startOfDay, $lte: endOfDay },
+      };
+
+      const toDelete = await MilkReportModel.find(query);
+      if (!toDelete.length) {
+        return res.status(404).json({
+          message: "No milk reports found for given date and shift.",
+        });
+      }
+
+      const result = await MilkReportModel.deleteMany(query);
+
+      return res.status(200).json({
+        message: `Deleted ${result.deletedCount} milk report(s) for ${date} (${normalizedShift}).`,
+        deletedCount: result.deletedCount,
+      });
+    } catch (error) {
+      console.error("Error in bulkDeleteMilkReports:", error);
+      return res.status(500).json({ error: "Failed to perform bulk delete." });
+    }
+  };
+
   uploadSalesReport = async (req, res) => {
     if (req.user.role !== "SubAdmin") {
       return res.status(403).json({
@@ -1825,6 +1908,8 @@ class SubAdminController {
         .json({ error: "Failed to process Sales Report Excel file" });
     }
   };
+
+
 
   getUploadedSalesReport = async (req, res) => {
     if (req.user.role !== "SubAdmin") {
@@ -2022,6 +2107,11 @@ class SubAdminController {
     }
   };
 
+  /**
+   * Bulk delete all sales reports for a given date and shift.
+   * Expects: req.body = { docDate: "YYYY-MM-DD" or date-string, shift: "" | "Morning" | "Evening" }
+   */
+ 
   // ✅ Add single sales report manually
   addSalesReport = async (req, res) => {
     if (req.user.role !== "SubAdmin") {

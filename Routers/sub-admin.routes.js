@@ -94,6 +94,16 @@ subAdminRouter.delete(
   }
 );
 
+// Bulk delete SalesReport records by IDs
+subAdminRouter.post(
+  "/bulk-delete-milk-reports",
+  jwtAuth,
+  (req, res) => {
+    subAdminController.bulkDeleteMilkReports(req, res);
+  }
+);
+
+
 // Delete SalesReport record by SalesReportId
 subAdminRouter.delete(
   "/delete-sales-report/:id",
