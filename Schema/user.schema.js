@@ -37,6 +37,7 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    disabled: { type: Boolean, default: false },
     lastLogin: { type: Date },
   },
   { timestamps: true }

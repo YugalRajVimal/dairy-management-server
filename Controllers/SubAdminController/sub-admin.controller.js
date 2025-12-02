@@ -8,6 +8,7 @@ import sendMail from "../../config/nodeMailer.config.js";
 import IssuedAssetsToSubAdminModel from "../../Schema/issued.assets.subadmin.schema.js";
 import UsedAssetsOfSubAdminModel from "../../Schema/used.assets.vendor.schema.js";
 import RoutesModel from "../../Schema/routes.schema.js";
+import mongoose from "mongoose";
 
 class SubAdminController {
   getProfileDetails = async (req, res) => {
@@ -510,6 +511,101 @@ class SubAdminController {
       });
     } catch (error) {
       console.error("Error updating Vendor:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
+  /**
+   * Disable a vendor (soft delete).
+   * PATCH /api/sub-admin/disable-vendor/:id
+   */
+  /**
+   * Enable or disable a vendor (soft delete/reactivate).
+   * PATCH /api/sub-admin/enable-disable-vendor/:id
+   * Expects body: { disabled: true/false }
+   */
+  enableDisableVendor = async (req, res) => {
+    if (req.user.role !== "SubAdmin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Sub Admins can perform this action.",
+      });
+    }
+
+    const { id } = req.params;
+    const { disabled } = req.body;
+
+    if (!id) {
+      return res.status(400).json({ message: "Vendor ID is required." });
+    }
+
+    if (typeof disabled !== "boolean") {
+      return res.status(400).json({ message: "Field 'disabled' is required and must be a boolean." });
+    }
+
+    try {
+      const vendor = await UserModel.findOne({
+        _id: id,
+        onboardedBy: req.user.id,
+        role: "Vendor",
+      });
+
+      if (!vendor) {
+        return res.status(404).json({ message: "Vendor not found." });
+      }
+
+      if (vendor.disabled === disabled) {
+        return res.status(400).json({
+          message: `Vendor is already ${disabled ? "disabled" : "enabled"}.`,
+        });
+      }
+
+      vendor.disabled = disabled;
+      await vendor.save();
+
+      res.status(200).json({ message: `Vendor ${disabled ? "disabled" : "enabled"} successfully.` });
+    } catch (error) {
+      console.error(`Error ${disabled ? "disabling" : "enabling"} Vendor:`, error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
+  /**
+   * Enable a vendor (reactivate previously disabled vendor).
+   * PATCH /api/sub-admin/enable-vendor/:id
+   */
+  enableVendor = async (req, res) => {
+    if (req.user.role !== "SubAdmin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Sub Admins can perform this action.",
+      });
+    }
+
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ message: "Vendor ID is required." });
+    }
+
+    try {
+      const vendor = await UserModel.findOne({
+        _id: id,
+        onboardedBy: req.user.id,
+        role: "Vendor",
+      });
+
+      if (!vendor) {
+        return res.status(404).json({ message: "Vendor not found." });
+      }
+
+      if (!vendor.disabled) {
+        return res.status(400).json({ message: "Vendor is already enabled." });
+      }
+
+      vendor.disabled = false;
+      await vendor.save();
+
+      res.status(200).json({ message: "Vendor enabled successfully." });
+    } catch (error) {
+      console.error("Error enabling Vendor:", error);
       res.status(500).json({ message: "Internal Server Error" });
     }
   };
@@ -1041,6 +1137,95 @@ class SubAdminController {
       res.status(500).json({ message: "Internal Server Error" });
     }
   };
+  
+  // uploadExcelFile = async (req, res) => {
+  //   if (req.user.role !== "SubAdmin") {
+  //     return res.status(403).json({
+  //       message: "Unauthorized: Only Sub Admins can perform this action.",
+  //     });
+  //   }
+
+  //   try {
+  //     if (!req.file) {
+  //       return res.status(400).json({ error: "No file uploaded" });
+  //     }
+
+  //     const workbook = xlsx.readFile(req.file.path);
+  //     const sheetName = workbook.SheetNames[0];
+  //     const worksheet = workbook.Sheets[sheetName];
+
+  //     // Convert to JSON
+  //     const rawData = xlsx.utils.sheet_to_json(worksheet, { range: 5 });
+
+  //     const uploadedDate = new Date();
+
+  //     // Utility: clean up keys + date
+  //     const parseDate = (value) => {
+  //       if (!value) return null;
+  //       if (typeof value === "number") {
+  //         // Excel serial date
+  //         return xlsx.SSF.parse_date_code(value)
+  //           ? new Date(
+  //               xlsx.SSF.parse_date_code(value).y,
+  //               xlsx.SSF.parse_date_code(value).m - 1,
+  //               xlsx.SSF.parse_date_code(value).d
+  //             )
+  //           : null;
+  //       }
+  //       if (typeof value === "string") {
+  //         // Convert "dd/mm/yyyy" -> proper Date
+  //         const parts = value.split("/");
+  //         if (parts.length === 3) {
+  //           const [day, month, year] = parts.map((p) => parseInt(p, 10));
+  //           return new Date(year, month - 1, day);
+  //         }
+  //         const parsed = new Date(value);
+  //         return isNaN(parsed) ? null : parsed;
+  //       }
+  //       return null;
+  //     };
+
+  //     // Pick only required fields
+  //     const filteredData = rawData.map((row) => {
+  //       return {
+  //         uploadedOn: uploadedDate,
+  //         uploadedBy: req.user.id,
+  //         docDate: parseDate(row[" Doc Date"]?.toString().trim()),
+  //         shift: row["Shift"]?.toString().trim() || null,
+  //         vlcUploaderCode: row["Vlc Uploader Code"]?.toString().trim() || null,
+  //         vlcName: row["VLC Name"]?.toString().trim() || null,
+  //         milkWeightLtr: parseFloat(row["Milk Weight(LTR)"]) || 0,
+  //         fatPercentage: parseFloat(row[" FAT(%)"]) || 0,
+  //         snfPercentage: parseFloat(row["SNF(%)"]) || 0,
+  //       };
+  //     });
+
+  //     // Validate before saving (skip rows missing required fields)
+  //     const validReports = filteredData.filter(
+  //       (r) => r.docDate && r.shift && r.vlcUploaderCode && r.vlcName
+  //     );
+
+  //     if (!validReports.length) {
+  //       return res.status(400).json({
+  //         error: "No valid rows found in Excel (missing required fields).",
+  //       });
+  //     }
+
+  //     await MilkReportModel.insertMany(validReports);
+
+  //     res.json({
+  //       message: "Excel data extracted & saved successfully ✅",
+  //       rows: validReports,
+  //       rowsLength: validReports.length,
+  //     });
+
+  //     // Optional cleanup
+  //     // fs.unlinkSync(req.file.path);
+  //   } catch (error) {
+  //     console.error("Error reading Excel:", error);
+  //     res.status(500).json({ error: "Failed to process Excel file" });
+  //   }
+  // };
 
   uploadExcelFile = async (req, res) => {
     if (req.user.role !== "SubAdmin") {
@@ -1115,6 +1300,112 @@ class SubAdminController {
         });
       }
 
+      // --- Begin: Prevent duplicate upload for same docDate+shift by same user ---
+      // Build a unique set of (docDate, shift) from this upload
+      const keyTuples = new Set();
+      validReports.forEach((r) => {
+        if (r.docDate && r.shift) {
+          // Only date, ignore time portion for comparison (set to start of day)
+          const dateKey = (new Date(
+            r.docDate.getFullYear(),
+            r.docDate.getMonth(),
+            r.docDate.getDate()
+          )).toISOString();
+          keyTuples.add(`${dateKey}|${r.shift}`);
+        }
+      });
+
+      // For each unique (docDate, shift), check if already exists for this user
+      const queries = Array.from(keyTuples).map(async (key) => {
+        const [dateKey, shift] = key.split("|");
+        const startOfDay = new Date(dateKey);
+        const endOfDay = new Date(startOfDay);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        // Check if *any* record by this user exists with same docDate (date only) + shift
+        // For robustness, also match vlcUploaderCode
+        const count = await MilkReportModel.countDocuments({
+          uploadedBy: req.user.id,
+          shift: shift,
+          docDate: { $gte: startOfDay, $lte: endOfDay },
+        });
+        return { key, count };
+      });
+
+      const results = await Promise.all(queries);
+
+      const duplicateErrKeys = results.filter((r) => r.count > 0).map((r) => r.key);
+
+      if (duplicateErrKeys.length > 0) {
+        // Pretty message of conflicting shifts/dates
+        const conflicts = duplicateErrKeys.map((entry) => {
+          const [d, s] = entry.split("|");
+          // Format d as dd-mm-yyyy
+          const dateObj = new Date(d);
+          const dateStr = `${String(dateObj.getDate()).padStart(2, "0")}-${String(
+            dateObj.getMonth() + 1
+          ).padStart(2, "0")}-${dateObj.getFullYear()}`;
+          return `Date: ${dateStr}, Shift: ${s}`;
+        });
+
+        // Conflicts were already declared above; just reuse and format for error message and details.
+        return res.status(400).json({
+          error: `Duplicate upload detected for: ${conflicts.join(", ")}`,
+          conflicts: duplicateErrKeys.map((entry) => {
+            const [dateIso, shift] = entry.split("|");
+            const dateObj = new Date(dateIso);
+            const dateStr = `${String(dateObj.getDate()).padStart(2, "0")}-${String(
+              dateObj.getMonth() + 1
+            ).padStart(2, "0")}-${dateObj.getFullYear()}`;
+            return { date: dateStr, shift };
+          }),
+        });
+      }
+
+      // --- End: Prevent duplicate upload for same docDate+shift by same user ---
+
+      // But also: Prevent more than two uploads per day per user (two different shifts allowed, nothing else)
+      // After checking above, now check for this day how many shifts will be present after upload
+
+      // Build a map: { dateKey: Set of shifts for that user in DB Already }
+      const dateShiftMap = {};
+
+      for (let key of keyTuples) {
+        const [dateKey, ] = key.split("|");
+        // Ignore time, just date
+        if (!dateShiftMap[dateKey]) {
+          // Find how many distinct shifts exist in DB for that date and user
+          const allShifts = await MilkReportModel.find({
+            uploadedBy: req.user.id,
+            docDate: {
+              $gte: new Date(dateKey),
+              $lte: new Date(new Date(dateKey).setHours(23,59,59,999))
+            }
+          }).distinct('shift');
+          dateShiftMap[dateKey] = new Set(allShifts); // from DB
+        }
+      }
+
+      // Now, for this upload, see for each dateKey how many shifts will be in DB after this upload
+      // (including what is about to be uploaded)
+      for (let key of keyTuples) {
+        const [dateKey, shift] = key.split("|");
+        // capture existing shifts for this dateKey
+        const shiftSet = new Set(dateShiftMap[dateKey] || []);
+        shiftSet.add(shift); // add shift from this upload
+        if (shiftSet.size > 2) {
+          // Impossible: more than 2 shifts ("Morning" and "Evening") uploads not allowed
+          const dateObj = new Date(dateKey);
+          const dateStr = `${String(dateObj.getDate()).padStart(2, "0")}-${String(
+            dateObj.getMonth() + 1
+          ).padStart(2, "0")}-${dateObj.getFullYear()}`;
+          return res.status(400).json({
+            error: "Upload failed: For the same date, only two Excel files can be uploaded (one Morning and one Evening). You are exceeding this for:",
+            conflict: `Date: ${dateStr}`
+          });
+        }
+      }
+
       await MilkReportModel.insertMany(validReports);
 
       res.json({
@@ -1123,11 +1414,82 @@ class SubAdminController {
         rowsLength: validReports.length,
       });
 
-      // Optional cleanup
-      // fs.unlinkSync(req.file.path);
+      // Optional: fs.unlinkSync(req.file.path);
     } catch (error) {
       console.error("Error reading Excel:", error);
       res.status(500).json({ error: "Failed to process Excel file" });
+    }
+  };
+
+  manualMilkReportEntry = async (req, res) => {
+    if (req.user.role !== "SubAdmin") {
+      return res.status(403).json({
+        error: "Unauthorized: Only Sub Admins can perform this action.",
+      });
+    }
+
+    try {
+      const {
+        docDate,
+        shift,
+        vlcUploaderCode,
+        vlcName,
+        milkWeightLtr,
+        fatPercentage,
+        snfPercentage,
+      } = req.body;
+
+      // Validate required fields
+      if (
+        !docDate ||
+        !shift ||
+        !vlcUploaderCode ||
+        !vlcName ||
+        milkWeightLtr === undefined ||
+        fatPercentage === undefined ||
+        snfPercentage === undefined
+      ) {
+        return res.status(400).json({
+          error: "Please fill all required fields in the form.",
+        });
+      }
+
+      // Only allow "Morning" or "Evening" for shift
+      const allowedShifts = ["Morning", "Evening"];
+      if (!allowedShifts.includes(shift)) {
+        return res.status(400).json({
+          error: "Allowed Shift values are 'Morning' or 'Evening'.",
+        });
+      }
+
+      // Parse docDate (expect "YYYY-MM-DD" or ISO format)
+      const docDateObj = new Date(docDate);
+      if (isNaN(docDateObj.getTime())) {
+        return res.status(400).json({
+          error: "Invalid date format for 'docDate'. Use YYYY-MM-DD.",
+        });
+      }
+
+      // Save the entry
+      const report = await MilkReportModel.create({
+        uploadedOn: new Date(),
+        uploadedBy: req.user.id,
+        docDate: docDateObj,
+        shift,
+        vlcUploaderCode: vlcUploaderCode.trim(),
+        vlcName: vlcName.trim(),
+        milkWeightLtr: Number(milkWeightLtr),
+        fatPercentage: Number(fatPercentage),
+        snfPercentage: Number(snfPercentage),
+      });
+
+      return res.status(201).json({
+        message: "Milk report entry saved successfully.",
+        data: report,
+      });
+    } catch (error) {
+      console.error("Error in manualMilkReportEntry:", error);
+      return res.status(500).json({ error: "Failed to save manual entry." });
     }
   };
 
@@ -1139,19 +1501,117 @@ class SubAdminController {
     }
 
     try {
-      const { page = 1, limit = 10 } = req.query;
+      const { page = 1, limit = 10, search = "" } = req.query;
       const skip = (parseInt(page) - 1) * parseInt(limit);
-
       const userId = req.user.id;
+      const searchText = (search || "").trim();
 
-      const milkReports = await MilkReportModel.find({ uploadedBy: userId })
-        .skip(skip)
-        .limit(parseInt(limit))
-        .sort({ uploadedOn: -1 }); // Sort by most recent upload first
+      // Build MongoDB query
+      const baseMatch = { uploadedBy: userId };
+      let searchOr = [];
 
-      const totalReports = await MilkReportModel.countDocuments({
-        uploadedBy: userId,
-      });
+      if (searchText !== "") {
+        // Escape regex special chars
+        const escaped = searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(escaped, "i"); // Case-insensitive
+
+        // Try normalizing searchText as a date in "YYYY-MM-DD" format for comparison with date fields
+        let normalizedDate = null;
+        // Accepts DD-MM-YYYY, YYYY-MM-DD, DD/MM/YYYY, etc.
+        // We'll normalize to YYYY-MM-DD string for comparisons
+        if (
+          /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(searchText) || // DD-MM-YYYY or DD/MM/YYYY
+          /^\d{4}[\/\-]\d{2}[\/\-]\d{2}$/.test(searchText)    // YYYY-MM-DD or YYYY/MM/DD
+        ) {
+          let parts;
+          if (/^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(searchText)) {
+            // DD-MM-YYYY or DD/MM/YYYY
+            parts = searchText.split(/[\-\/]/);
+            normalizedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+          } else if (/^\d{4}[\/\-]\d{2}[\/\-]\d{2}$/.test(searchText)) {
+            // YYYY-MM-DD or YYYY/MM/DD
+            parts = searchText.split(/[\-\/]/);
+            normalizedDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+          }
+        }
+
+        console.log(normalizedDate);
+
+        searchOr = [
+          { shift: regex },
+          { vlcUploaderCode: regex },
+          { vlcName: regex },
+          { edited: searchText.toLowerCase() === "true" ? true : searchText.toLowerCase() === "false" ? false : undefined },
+
+          // Dates as string, normalized search
+          ...(normalizedDate
+            ? [{
+                $expr: {
+                  $eq: [
+                    { $dateToString: { format: "%Y-%m-%d", date: "$docDate" } },
+                    normalizedDate
+                  ]
+                }
+              }]
+            : [{
+                $expr: {
+                  $regexMatch: {
+                    input: { $dateToString: { format: "%Y-%m-%d", date: "$docDate" } },
+                    regex: escaped,
+                    options: "i"
+                  }
+                }
+              }]
+          ),
+
+          // Numeric fields as "string search"
+          {
+            $expr: {
+              $regexMatch: {
+                input: { $toString: "$milkWeightLtr" },
+                regex: escaped,
+                options: "i"
+              }
+            }
+          },
+          {
+            $expr: {
+              $regexMatch: {
+                input: { $toString: "$fatPercentage" },
+                regex: escaped,
+                options: "i"
+              }
+            }
+          },
+          {
+            $expr: {
+              $regexMatch: {
+                input: { $toString: "$snfPercentage" },
+                regex: escaped,
+                options: "i"
+              }
+            }
+          }
+        ];
+
+        // Remove undefined matches (in edited above)
+        searchOr = searchOr.filter(f => {
+          if (typeof f.edited === "undefined") return !(f.hasOwnProperty("edited"));
+          return true;
+        });
+      }
+
+      const query = searchOr.length > 0
+        ? { ...baseMatch, $or: searchOr }
+        : baseMatch;
+
+      const [milkReports, totalReports] = await Promise.all([
+        MilkReportModel.find(query)
+          .skip(skip)
+          .limit(parseInt(limit))
+          .sort({ uploadedOn: -1 }),
+        MilkReportModel.countDocuments(query)
+      ]);
 
       return res.status(200).json({
         message: "Milk reports fetched successfully ✅",
@@ -1161,18 +1621,13 @@ class SubAdminController {
         totalReports: totalReports,
       });
     } catch (error) {
-      console.error("Error in getUploadedExcelReport:", error);
+      console.error("Error in getUploadedMilkReport:", error);
       return res.status(500).json({ error: "Internal server error" });
     }
   };
 
-  /**
-   * Update MilkReport record for only allowed fields:
-   *   docDate, shift, vlcName, milkWeightLtr, fatPercentage, snfPercentage
-   * On update:
-   *   - set 'edited' = true
-   *   - push previous values into 'history' array
-   */
+
+
   updateMilkReport = async (req, res) => {
     if (req.user.role !== "SubAdmin") {
       return res.status(403).json({
@@ -1180,7 +1635,7 @@ class SubAdminController {
       });
     }
 
-    // Only allow these fields to be updated
+    // Now allowing vlcUploaderCode to be updated as well
     const allowedFields = [
       "docDate",
       "shift",
@@ -1188,6 +1643,7 @@ class SubAdminController {
       "milkWeightLtr",
       "fatPercentage",
       "snfPercentage",
+      "vlcUploaderCode",
     ];
 
     try {
@@ -1215,7 +1671,7 @@ class SubAdminController {
         return res.status(404).json({ message: "Milk report not found." });
       }
 
-      // Save old values for history
+      // Save old values for history, including vlcUploaderCode
       const historyEntry = {};
       for (const field of allowedFields) {
         historyEntry[field] = milkReport[field];
@@ -1226,7 +1682,6 @@ class SubAdminController {
       // Add editedOn time (Date) for this update
       const editedOnDate = new Date();
       historyEntry.editedOn = editedOnDate;
-      historyEntry.vlcUploaderCode = milkReport.vlcUploaderCode;
 
       milkReport.history = milkReport.history || [];
       milkReport.history.push(historyEntry);
@@ -1246,6 +1701,31 @@ class SubAdminController {
     } catch (error) {
       console.error("Error updating milk report:", error);
       res.status(500).json({ message: "Failed to update milk report" });
+    }
+  };
+
+  // Delete MilkReport record by MilkReportId
+  deleteMilkreport = async (req, res) => {
+    try {
+      const { id } = req.params; // Expecting MilkReportId as a URL param
+      if (!id) {
+        return res.status(400).json({ message: "MilkReportId is required." });
+      }
+
+      const milkReport = await MilkReportModel.findById(id);
+      if (!milkReport) {
+        return res.status(404).json({ message: "Milk report not found." });
+      }
+
+      await MilkReportModel.findByIdAndDelete(id);
+
+      return res.status(200).json({
+        message: "Milk report deleted successfully ✅",
+        data: milkReport,
+      });
+    } catch (error) {
+      console.error("Error deleting milk report:", error);
+      return res.status(500).json({ message: "Failed to delete milk report." });
     }
   };
 
@@ -1354,19 +1834,101 @@ class SubAdminController {
     }
 
     try {
-      const { page = 1, limit = 10 } = req.query;
+      const { page = 1, limit = 10, search = "" } = req.query;
       const skip = (parseInt(page) - 1) * parseInt(limit);
 
       const userId = req.user.id;
+      const searchText = (search || "").trim();
 
-      const salesReport = await SalesReportModel.find({ uploadedBy: userId })
-        .skip(skip)
-        .limit(parseInt(limit))
-        .sort({ uploadedOn: -1 }); // Sort by most recent upload first
+      // Build MongoDB query
+      const baseMatch = { uploadedBy: userId };
+      let searchOr = [];
 
-      const totalReports = await SalesReportModel.countDocuments({
-        uploadedBy: userId,
-      });
+      if (searchText !== "") {
+        // Escape regex special chars
+        const escaped = searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(escaped, "i"); // Case-insensitive
+
+        // Try normalizing searchText as a date in "YYYY-MM-DD" format for comparison with date fields
+        let normalizedDate = null;
+        // Accepts DD-MM-YYYY, YYYY-MM-DD, DD/MM/YYYY, etc.
+        // We'll normalize to YYYY-MM-DD string for comparisons
+        if (
+          /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(searchText) || // DD-MM-YYYY or DD/MM/YYYY
+          /^\d{4}[\/\-]\d{2}[\/\-]\d{2}$/.test(searchText)    // YYYY-MM-DD or YYYY/MM/DD
+        ) {
+          let parts;
+          if (/^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(searchText)) {
+            // DD-MM-YYYY or DD/MM/YYYY
+            parts = searchText.split(/[\-\/]/);
+            normalizedDate = `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`;
+          } else if (/^\d{4}[\/\-]\d{2}[\/\-]\d{2}$/.test(searchText)) {
+            // YYYY-MM-DD or YYYY/MM/DD
+            parts = searchText.split(/[\-\/]/);
+            normalizedDate = `${parts[0]}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}`;
+          }
+        }
+
+        // For edited boolean search
+        let editedValue;
+        if (searchText.toLowerCase() === "true") editedValue = true;
+        else if (searchText.toLowerCase() === "false") editedValue = false;
+
+        searchOr = [
+          { itemCode: regex },   // itemCode may be string or number/date, but search as string anyway
+          { itemName: regex },
+          { vlcUploaderCode: regex },
+          { edited: typeof editedValue !== "undefined" ? editedValue : undefined },
+          // Dates as string, normalized search, apply to docDate
+          ...(normalizedDate
+            ? [{
+                $expr: {
+                  $eq: [
+                    { $dateToString: { format: "%Y-%m-%d", date: "$docDate" } },
+                    normalizedDate,
+                  ]
+                }
+              }]
+            : [{
+                $expr: {
+                  $regexMatch: {
+                    input: { $dateToString: { format: "%Y-%m-%d", date: "$docDate" } },
+                    regex: escaped,
+                    options: "i"
+                  }
+                }
+              }]
+          ),
+          // Numeric fields as "string search"
+          {
+            $expr: {
+              $regexMatch: {
+                input: { $toString: "$quantity" },
+                regex: escaped,
+                options: "i"
+              }
+            }
+          }
+        ];
+
+        // Remove undefined matches (in edited above)
+        searchOr = searchOr.filter(f => {
+          if (typeof f.edited === "undefined") return !(f.hasOwnProperty("edited"));
+          return true;
+        });
+      }
+
+      const query = searchOr.length > 0
+        ? { ...baseMatch, $or: searchOr }
+        : baseMatch;
+
+      const [salesReport, totalReports] = await Promise.all([
+        SalesReportModel.find(query)
+          .skip(skip)
+          .limit(parseInt(limit))
+          .sort({ uploadedOn: -1 }),
+        SalesReportModel.countDocuments(query)
+      ]);
 
       return res.status(200).json({
         message: "Sales reports fetched successfully ✅",
@@ -1391,7 +1953,7 @@ class SubAdminController {
 
     try {
       const { id } = req.params;
-      const { itemCode, itemName, quantity, docDate } = req.body; // changed code->name
+      const { itemCode, itemName, vlcUploaderCode, quantity, docDate } = req.body; // Accept vlcUploaderCode
 
       // Find the sales report document
       const salesReport = await SalesReportModel.findById(id);
@@ -1416,6 +1978,7 @@ class SubAdminController {
       // Update the fields
       if (itemCode !== undefined) salesReport.itemCode = itemCode;
       if (itemName !== undefined) salesReport.itemName = itemName;
+      if (vlcUploaderCode !== undefined) salesReport.vlcUploaderCode = vlcUploaderCode;
       if (quantity !== undefined) salesReport.quantity = quantity;
       if (docDate !== undefined) salesReport.docDate = new Date(docDate);
 
@@ -1431,6 +1994,31 @@ class SubAdminController {
     } catch (error) {
       console.error("Error in updateSalesReport:", error);
       res.status(500).json({ error: "Internal server error" });
+    }
+  };
+
+  // Delete SalesReport record by SalesReportId
+  deleteSalesreport = async (req, res) => {
+    try {
+      const { id } = req.params; // Expecting SalesReportId as a URL param
+      if (!id) {
+        return res.status(400).json({ message: "SalesReportId is required." });
+      }
+
+      const salesReport = await SalesReportModel.findById(id);
+      if (!salesReport) {
+        return res.status(404).json({ message: "Sales report not found." });
+      }
+
+      await SalesReportModel.findByIdAndDelete(id);
+
+      return res.status(200).json({
+        message: "Sales report deleted successfully ✅",
+        data: salesReport,
+      });
+    } catch (error) {
+      console.error("Error deleting sales report:", error);
+      return res.status(500).json({ message: "Failed to delete sales report." });
     }
   };
 
@@ -1631,6 +2219,11 @@ class SubAdminController {
   // };
 
   addAssetsReport = async (req, res) => {
+    // We use a MongoDB session/transaction to guarantee atomicity!
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
     try {
       const {
         vlcCode,
@@ -1659,14 +2252,19 @@ class SubAdminController {
       } = req.body;
 
       const subAdminId = req.user.id;
-      if (!vlcCode)
+      if (!vlcCode) {
+        await session.abortTransaction();
+        session.endSession();
         return res.status(400).json({ error: "vlcCode is required" });
+      }
 
       const uploadedOn = new Date();
 
       // Check if asset already exists
-      const existingAsset = await AssetsReportModel.findOne({ vlcCode });
+      const existingAsset = await AssetsReportModel.findOne({ vlcCode }).session(session);
       if (existingAsset) {
+        await session.abortTransaction();
+        session.endSession();
         return res.status(409).json({
           message:
             "Assets record with this vlcCode already exists. Please edit the existing record.",
@@ -1690,8 +2288,10 @@ class SubAdminController {
       // ✅ Step 1: Validate issued assets exist
       const issuedAssets = await IssuedAssetsToSubAdminModel.findOne({
         subAdminId,
-      });
+      }).session(session);
       if (!issuedAssets) {
+        await session.abortTransaction();
+        session.endSession();
         return res.status(400).json({
           message:
             "No issued assets found for this sub-admin. Cannot mark as used.",
@@ -1710,6 +2310,8 @@ class SubAdminController {
       );
 
       if (missingDps.length > 0 || missingBonds.length > 0) {
+        await session.abortTransaction();
+        session.endSession();
         return res.status(400).json({
           message: "Some DPS or Bond values are not issued to this sub-admin.",
           missing: { dps: missingDps, bond: missingBonds },
@@ -1720,7 +2322,7 @@ class SubAdminController {
       if (dpsValues.length > 0) {
         const possibleConflicts = await AssetsReportModel.find({
           dps: { $exists: true, $ne: "" },
-        });
+        }).session(session);
         const conflicts = [];
 
         possibleConflicts.forEach((asset) => {
@@ -1737,6 +2339,8 @@ class SubAdminController {
         });
 
         if (conflicts.length > 0) {
+          await session.abortTransaction();
+          session.endSession();
           return res.status(409).json({
             message: "Some DPS values already exist in other asset records.",
             conflicts,
@@ -1747,7 +2351,7 @@ class SubAdminController {
       // ✅ Step 4: Check inventory availability
       const usedAssets = await UsedAssetsOfSubAdminModel.findOne({
         subAdminId,
-      });
+      }).session(session);
       const issued = issuedAssets || {};
       const used = usedAssets || {};
 
@@ -1775,6 +2379,8 @@ class SubAdminController {
 
         const available = issuedVal - usedVal;
         if (newVal > available) {
+          await session.abortTransaction();
+          session.endSession();
           return res.status(400).json({
             message: `Not enough ${field.toUpperCase()} assets left in inventory.`,
             details: {
@@ -1816,7 +2422,7 @@ class SubAdminController {
         vspSign,
         history: [],
       });
-      await newAsset.save();
+      await newAsset.save({ session });
 
       // ✅ Step 6: Update UsedAssetsOfSubAdminModel
       if (usedAssets) {
@@ -1852,7 +2458,7 @@ class SubAdminController {
           new Set([...existingBond, ...bondValues])
         ).join(",");
 
-        await usedAssets.save();
+        await usedAssets.save({ session });
       } else {
         const newUsed = new UsedAssetsOfSubAdminModel({
           uploadedOn,
@@ -1876,8 +2482,12 @@ class SubAdminController {
           bond: bondValues.join(","),
           history: [],
         });
-        await newUsed.save();
+        await newUsed.save({ session });
       }
+
+      // COMMIT TRANSACTION
+      await session.commitTransaction();
+      session.endSession();
 
       return res.json({
         message:
@@ -1885,6 +2495,13 @@ class SubAdminController {
         data: newAsset,
       });
     } catch (error) {
+      // Rollback ALL changes on any error
+      try {
+        await session.abortTransaction();
+      } catch (err2) {
+        // Ignore
+      }
+      session.endSession();
       console.error("Error in addAssetsReport:", error);
       return res.status(500).json({ error: "Internal server error" });
     }
@@ -2110,6 +2727,21 @@ class SubAdminController {
   // };
 
   updateAssetsReport = async (req, res) => {
+    // We want both AssetsReportModel and UsedAssetsOfSubAdminModel to update atomically.
+    // We'll use a MongoDB session + transaction (requires MongoDB >=4.0, and Mongoose connection must be configured for transactions).
+
+    // Helper to normalize comma-separated strings
+    const parseCommaValues = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val.map((v) => v.trim()).filter(Boolean);
+      return val
+        .split(",")
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0);
+    };
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
     try {
       const {
         vlcCode,
@@ -2139,31 +2771,27 @@ class SubAdminController {
 
       const subAdminId = req.user.id;
       if (!vlcCode) {
+        await session.abortTransaction();
+        session.endSession();
         return res.status(400).json({ error: "vlcCode is required" });
       }
 
       const changedOn = new Date();
 
-      // Find the existing asset record
-      let existingAsset = await AssetsReportModel.findOne({ vlcCode });
+      // Find the existing asset record (in transaction)
+      let existingAsset = await AssetsReportModel.findOne({ vlcCode }).session(session);
       if (!existingAsset) {
+        await session.abortTransaction();
+        session.endSession();
         return res.status(404).json({
           message: "Assets record not found. Please create it first.",
         });
       }
 
-      // Helper to normalize comma-separated strings
-      const parseCommaValues = (val) => {
-        if (!val) return [];
-        if (Array.isArray(val)) return val.map((v) => v.trim()).filter(Boolean);
-        return val
-          .split(",")
-          .map((v) => v.trim())
-          .filter((v) => v.length > 0);
-      };
-
       const dpsValues = parseCommaValues(dps);
       const bondValues = parseCommaValues(bond);
+      const oldDpsValues = parseCommaValues(existingAsset.dps);
+      const oldBondValues = parseCommaValues(existingAsset.bond);
 
       // ================================
       // 🔍 Step 1: Detect if any change exists
@@ -2216,6 +2844,8 @@ class SubAdminController {
       }
 
       if (!isChanged) {
+        await session.abortTransaction();
+        session.endSession();
         return res.status(400).json({
           message: "No changes detected. Provide new values to update.",
         });
@@ -2226,12 +2856,48 @@ class SubAdminController {
       // ================================
       const issuedAssets = await IssuedAssetsToSubAdminModel.findOne({
         subAdminId,
-      });
+      }).session(session);
       if (!issuedAssets) {
+        await session.abortTransaction();
+        session.endSession();
         return res.status(400).json({
           message:
             "No issued assets found for this sub-admin. Cannot validate update.",
         });
+      }
+
+      // ================================
+      // 🚨 Step 2.1: Check if DPS/BOND to be updated are already present in used assets (error!)
+      // ================================
+      const usedAssets = await UsedAssetsOfSubAdminModel.findOne({
+        subAdminId,
+      }).session(session);
+
+      // Only check for *extra* DPS/BOND, i.e. those not part of oldDpsValues/oldBondValues (for this asset)
+      let usedDpsAlready = [];
+      let usedBondAlready = [];
+      if (usedAssets) {
+        const usedDpsList = parseCommaValues(usedAssets.dps);
+        const usedBondList = parseCommaValues(usedAssets.bond);
+
+        // DPS values that are trying to be set in this update, that are already in usedAssets for this subadmin,
+        // but were not previously part of this asset (so they would become 'used' twice through two assets)
+        usedDpsAlready = dpsValues.filter(
+          (val) => usedDpsList.includes(val) && !oldDpsValues.includes(val)
+        );
+        usedBondAlready = bondValues.filter(
+          (val) => usedBondList.includes(val) && !oldBondValues.includes(val)
+        );
+
+        if (usedDpsAlready.length > 0 || usedBondAlready.length > 0) {
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(409).json({
+            message:
+              "Some DPS or Bond values are already present in used assets and cannot be assigned twice.",
+            alreadyUsed: { dps: usedDpsAlready, bond: usedBondAlready },
+          });
+        }
       }
 
       const issuedDpsList = parseCommaValues(issuedAssets.dps);
@@ -2245,6 +2911,8 @@ class SubAdminController {
       );
 
       if (missingDps.length > 0 || missingBonds.length > 0) {
+        await session.abortTransaction();
+        session.endSession();
         return res.status(400).json({
           message: "Some DPS or Bond values are not issued to this sub-admin.",
           missing: { dps: missingDps, bond: missingBonds },
@@ -2258,7 +2926,7 @@ class SubAdminController {
         const possibleConflicts = await AssetsReportModel.find({
           dps: { $exists: true, $ne: "" },
           vlcCode: { $ne: vlcCode },
-        });
+        }).session(session);
 
         const conflicts = [];
         possibleConflicts.forEach((asset) => {
@@ -2275,6 +2943,8 @@ class SubAdminController {
         });
 
         if (conflicts.length > 0) {
+          await session.abortTransaction();
+          session.endSession();
           return res.status(409).json({
             message: "Some DPS values already exist in other asset records.",
             conflicts,
@@ -2289,7 +2959,7 @@ class SubAdminController {
         const possibleConflicts = await AssetsReportModel.find({
           bond: { $exists: true, $ne: "" },
           vlcCode: { $ne: vlcCode },
-        });
+        }).session(session);
 
         const conflicts = [];
         possibleConflicts.forEach((asset) => {
@@ -2306,6 +2976,8 @@ class SubAdminController {
         });
 
         if (conflicts.length > 0) {
+          await session.abortTransaction();
+          session.endSession();
           return res.status(409).json({
             message: "Some Bond values already exist in other asset records.",
             conflicts,
@@ -2316,9 +2988,6 @@ class SubAdminController {
       // ================================
       // 🔢 Step 4: Validate inventory (issued vs used)
       // ================================
-      const usedAssets = await UsedAssetsOfSubAdminModel.findOne({
-        subAdminId,
-      });
       const used = usedAssets || {};
       const issued = issuedAssets || {};
 
@@ -2347,6 +3016,8 @@ class SubAdminController {
         const available =
           issuedVal - usedVal + Number(existingAsset[field] || 0);
         if (newVal > available) {
+          await session.abortTransaction();
+          session.endSession();
           return res.status(400).json({
             message: `Not enough ${field.toUpperCase()} assets left in inventory.`,
             details: {
@@ -2388,9 +3059,6 @@ class SubAdminController {
         changedOn,
       });
 
-      //      // 🕒 Step 5: Save history before update
-      // existingAsset.history.push({ ... });
-
       // 💾 Store OLD numeric values before overwriting anything
       const oldNumericValues = {};
       numericFields.forEach((f) => {
@@ -2404,12 +3072,13 @@ class SubAdminController {
         }
       });
 
-      await existingAsset.save();
+      await existingAsset.save({ session });
 
       // ================================
       // 🔁 Step 7: Update UsedAssetsOfSubAdminModel (with correct old values)
       // ================================
       if (usedAssets) {
+        // Update numeric fields in used assets
         numericFields.forEach((f) => {
           const oldVal = oldNumericValues[f];
           const newVal = Number(req.body[f] ?? oldVal);
@@ -2420,29 +3089,62 @@ class SubAdminController {
           }
         });
 
-        // 🔒 Clamp negative values to zero (safety check)
+        // Clamp negative values to zero
         numericFields.forEach((f) => {
           usedAssets[f] = Math.max(0, usedAssets[f]);
         });
 
-        const existingDps = parseCommaValues(usedAssets.dps);
-        const existingBond = parseCommaValues(usedAssets.bond);
-        usedAssets.dps = Array.from(
-          new Set([...existingDps, ...dpsValues])
-        ).join(",");
-        usedAssets.bond = Array.from(
-          new Set([...existingBond, ...bondValues])
-        ).join(",");
+        // --- DPS and BOND removal from used assets if removed in the update ---
+        // DPS: Remove entries that were previously there but are now missing
+        let existingDps = parseCommaValues(usedAssets.dps);
+        let existingBond = parseCommaValues(usedAssets.bond);
+
+        // Find DPS values that were previously part of this vlcCode's asset, but now have been removed
+        // Remove only the ones from *this* asset that are no longer in dpsValues
+        const removedDps = oldDpsValues.filter(
+          (val) => !dpsValues.includes(val)
+        );
+        const removedBond = oldBondValues.filter(
+          (val) => !bondValues.includes(val)
+        );
+
+        // Remove deleted DPS from usedAssets.dps
+        if (removedDps.length > 0) {
+          existingDps = existingDps.filter((x) => !removedDps.includes(x));
+        }
+        // Remove deleted Bond from usedAssets.bond
+        if (removedBond.length > 0) {
+          existingBond = existingBond.filter((x) => !removedBond.includes(x));
+        }
+
+        // Add new DPS & BOND if any
+        // (keep union, so system can't "un-use" a DPS or BOND from other assets)
+        existingDps = Array.from(new Set([...existingDps, ...dpsValues]));
+        existingBond = Array.from(new Set([...existingBond, ...bondValues]));
+
+        usedAssets.dps = existingDps.join(",");
+        usedAssets.bond = existingBond.join(",");
 
         usedAssets.history.push({ changedOn });
-        await usedAssets.save();
+        await usedAssets.save({ session });
       }
+
+      // COMMIT TRANSACTION
+      await session.commitTransaction();
+      session.endSession();
 
       return res.json({
         message: "Assets record updated successfully ✅",
         data: existingAsset,
       });
     } catch (error) {
+      // ROLLBACK TRANSACTION ON ERROR
+      try {
+        await session.abortTransaction();
+      } catch (err2) {
+        // log/ignore
+      }
+      session.endSession();
       console.error("Error in updateAssetsReport:", error);
       return res.status(500).json({ error: "Internal server error" });
     }
@@ -2532,7 +3234,7 @@ class SubAdminController {
 
       if (!assetsReport) {
         return res.status(404).json({
-          message: "No issued assets report found for this sub-admin.",
+          message: "Assets are not yet issued to this SubAdmin",
         });
       }
 

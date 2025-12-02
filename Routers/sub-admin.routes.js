@@ -30,6 +30,9 @@ subAdminRouter.put("/update-vendor/:id", jwtAuth, (req, res) => {
   subAdminController.updateVendor(req, res);
 });
 
+subAdminRouter.patch("/enable-disable-vendor/:id", jwtAuth, (req, res) => {
+  subAdminController.enableDisableVendor(req, res);
+});
 
 subAdminRouter.get("/get-all-vendors", jwtAuth, (req, res) => {
   subAdminController.getAllVendors(req, res);
@@ -61,6 +64,15 @@ subAdminRouter.post(
   }
 );
 
+subAdminRouter.post(
+  "/manual-milk-report-entry",
+  jwtAuth,
+  (req, res) => {
+    subAdminController.manualMilkReportEntry(req, res);
+  }
+);
+
+
 subAdminRouter.get("/get-uploaded-milk-report", jwtAuth, (req, res) => {
   subAdminController.getUploadedMilkReport(req, res);
 });
@@ -72,6 +84,27 @@ subAdminRouter.put(
     subAdminController.updateMilkReport(req, res);
   }
 );
+
+// Delete MilkReport record by MilkReportId
+subAdminRouter.delete(
+  "/delete-milk-report/:id",
+  jwtAuth,
+  (req, res) => {
+    subAdminController.deleteMilkreport(req, res);
+  }
+);
+
+// Delete SalesReport record by SalesReportId
+subAdminRouter.delete(
+  "/delete-sales-report/:id",
+  jwtAuth,
+  (req, res) => {
+    subAdminController.deleteSalesreport(req, res);
+  }
+);
+
+
+
 
 subAdminRouter.post(
   "/upload-sales-report",

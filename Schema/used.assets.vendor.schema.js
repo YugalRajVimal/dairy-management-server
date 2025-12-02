@@ -1,5 +1,9 @@
 import mongoose from "mongoose";
 
+// We need to ensure that `dps` and `bond` can be null,
+// but when not null, they must be unique (sparse index).
+// This is achieved by using `unique: true, sparse: true`.
+
 const usedAssetsOfSubAdminSchema = new mongoose.Schema(
   {
     uploadedOn: { type: Date, required: true },
@@ -18,7 +22,7 @@ const usedAssetsOfSubAdminSchema = new mongoose.Schema(
     can: { type: Number, default: 0 },
     lid: { type: Number, default: 0 },
     pvc: { type: Number, default: 0 },
-    dps: { type: String, default: 0, unique: true },
+    dps: { type: String, default: null, unique: true, sparse: true }, // allow null, unique when set
     keyboard: { type: Number, default: 0 },
     printer: { type: Number, default: 0 },
     charger: { type: Number, default: 0 },
@@ -28,7 +32,7 @@ const usedAssetsOfSubAdminSchema = new mongoose.Schema(
     ews: { type: Number, default: 0 },
     display: { type: Number, default: 0 },
     battery: { type: Number, default: 0 },
-    bond: { type: String, default: 0, unique: true },
+    bond: { type: String, default: null, unique: true, sparse: true }, // allow null, unique when set
     // vspSign: { type: Number, default: 0 },
     history: [
       {
