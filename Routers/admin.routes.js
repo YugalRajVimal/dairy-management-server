@@ -20,6 +20,27 @@ adminRouter.get("/get-dashboard-details", jwtAuth, (req, res) => {
   adminController.getDashboardDetails(req, res);
 });
 
+// Add Route
+adminRouter.post("/add-route", jwtAuth, (req, res) => {
+  adminController.addRoute(req, res);
+});
+
+// Edit Route
+adminRouter.put("/edit-route/:id", jwtAuth, (req, res) => {
+  adminController.editRoute(req, res);
+});
+
+// Delete Route
+adminRouter.delete("/delete-route/:id", jwtAuth, (req, res) => {
+  adminController.deleteRoute(req, res);
+});
+
+// Fetch All Routes
+adminRouter.get("/get-all-routes", jwtAuth, (req, res) => {
+  adminController.getAllRoutes(req, res);
+});
+
+
 
 adminRouter.post("/onboard-sub-admin", jwtAuth, (req, res) => {
   adminController.onboardSubAdmin(req, res);

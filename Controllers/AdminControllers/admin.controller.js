@@ -60,6 +60,151 @@ class AdminController {
     }
   };
 
+  // Add Route
+  addRoute = async (req, res) => {
+    if (req.user.role !== "Admin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Admins can perform this action.",
+      });
+    }
+
+    try {
+      const { route } = req.body;
+      if (route === undefined || route === null || route === "") {
+        return res.status(400).json({ message: "Route value is required." });
+      }
+
+      // Check for duplicates, ignoring type: "20" and 20 should be considered the same
+      const routeStr = route.toString().trim();
+
+      // Find any route where the string representation matches
+      const existingRoute = await RoutesModel.findOne({
+        $expr: { $eq: [{ $toString: "$route" }, routeStr] },
+      });
+
+      if (existingRoute) {
+        return res.status(409).json({ message: "Route already exists (same as another route with different type)." });
+      }
+
+      const newRoute = new RoutesModel({ route });
+      await newRoute.save();
+
+      res.status(201).json({ message: "Route added successfully.", route: newRoute });
+    } catch (error) {
+      console.error("Error adding route:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
+  // Edit Route
+  editRoute = async (req, res) => {
+    if (req.user.role !== "Admin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Admins can perform this action.",
+      });
+    }
+
+    try {
+      const routeId = req.params.id;
+      const { route } = req.body;
+      if (route === undefined || route === null || route === "") {
+        return res.status(400).json({ message: "Route value is required to update." });
+      }
+
+      const routeStr = route.toString().trim();
+
+      // Prevent duplicate route: check if another route (not this _id) matches as string
+      const existingRoute = await RoutesModel.findOne({
+        $and: [
+          { $expr: { $eq: [{ $toString: "$route" }, routeStr] } },
+          { _id: { $ne: routeId } },
+        ],
+      });
+
+      if (existingRoute) {
+        return res.status(409).json({ message: "Another route with this value (as string/number) already exists." });
+      }
+
+      const updatedRoute = await RoutesModel.findByIdAndUpdate(
+        routeId,
+        { route },
+        { new: true }
+      );
+
+      if (!updatedRoute) {
+        return res.status(404).json({ message: "Route not found." });
+      }
+
+      res.status(200).json({ message: "Route updated successfully.", route: updatedRoute });
+    } catch (error) {
+      console.error("Error editing route:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
+  // Delete Route
+  deleteRoute = async (req, res) => {
+    if (req.user.role !== "Admin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Admins can perform this action.",
+      });
+    }
+
+    try {
+      const routeId = req.params.id;
+
+      const deletedRoute = await RoutesModel.findByIdAndDelete(routeId);
+
+      if (!deletedRoute) {
+        return res.status(404).json({ message: "Route not found." });
+      }
+
+      res.status(200).json({ message: "Route deleted successfully.", deletedRoute });
+    } catch (error) {
+      console.error("Error deleting route:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
+  // Fetch All Routes
+  getAllRoutes = async (req, res) => {
+    if (req.user.role !== "Admin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Admins can perform this action.",
+      });
+    }
+
+    try {
+      const allRoutes = await RoutesModel.find({}).lean();
+
+      // Custom sort: text (alphabet) first, then number (ascending)
+      const sortedRoutes = allRoutes.sort((a, b) => {
+        const routeA = a.route;
+        const routeB = b.route;
+        const isNumA = !isNaN(Number(routeA));
+        const isNumB = !isNaN(Number(routeB));
+
+        // Text first, then number
+        if (isNumA && !isNumB) return 1;    // b (text) before a (number)
+        if (!isNumA && isNumB) return -1;   // a (text) before b (number)
+        if (!isNumA && !isNumB) {
+          // Both text: compare as strings (case-insensitive)
+          return String(routeA).localeCompare(String(routeB), undefined, { sensitivity: 'base', numeric: false });
+        }
+        // Both number: sort asc numerically
+        return Number(routeA) - Number(routeB);
+      });
+
+      res.status(200).json({
+        message: "All routes fetched successfully.",
+        routes: sortedRoutes,
+      });
+    } catch (error) {
+      console.error("Error fetching all routes:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
   onboardSubAdmin = async (req, res) => {
     if (req.user.role != "Admin") {
       return res.status(403).json({
@@ -387,7 +532,7 @@ class AdminController {
 
       // Fetch paginated data
       const assetsReport = await IssuedAssetsToSubAdminModel.find({})
-        .populate("subAdminId", "_id name nickName email") // Populate subAdminId with _id, name, and email
+        .populate("subAdminId", "name nickName email phoneNo -_id") // Exclude _id from subAdminId population
         .skip((page - 1) * limit)
         .limit(Number(limit))
         .lean();
