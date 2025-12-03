@@ -25,6 +25,11 @@ adminRouter.post("/onboard-sub-admin", jwtAuth, (req, res) => {
   adminController.onboardSubAdmin(req, res);
 });
 
+adminRouter.put("/update-sub-admin/:id", jwtAuth, (req, res) => {
+  adminController.updateSubAdmin(req, res);
+});
+
+
 adminRouter.get("/get-all-sub-admins", jwtAuth, (req, res) => {
   adminController.getAllSubAdmins(req, res);
 });

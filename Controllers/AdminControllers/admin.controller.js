@@ -210,6 +210,100 @@ class AdminController {
     }
   };
 
+  updateSubAdmin = async (req, res) => {
+    if (req.user.role !== "Admin") {
+      return res.status(403).json({
+        message: "Unauthorized: Only Admins can perform this action.",
+      });
+    }
+
+    try {
+      const { id } = req.params;
+      const {
+        name,
+        nickName,
+        email,
+        phoneNo,
+        address,
+        zone,
+        state,
+        city,
+        pincode,
+        addressLine,
+      } = req.body;
+
+      // Validate at least one field to update
+      if (
+        !name &&
+        !nickName &&
+        !email &&
+        !phoneNo &&
+        !address &&
+        !zone &&
+        !state &&
+        !city &&
+        !pincode &&
+        !addressLine
+      ) {
+        return res.status(400).json({
+          message: "Provide at least one field to update.",
+        });
+      }
+
+      // Build update object
+      const updateObj = {};
+
+      if (name !== undefined) updateObj.name = name;
+      if (nickName !== undefined) updateObj.nickName = nickName;
+      if (email !== undefined) updateObj.email = String(email).toLowerCase();
+      if (phoneNo !== undefined) updateObj.phoneNo = phoneNo;
+      if (zone !== undefined) updateObj.zone = zone;
+
+      // Handle address update
+      if (address || state || city || pincode || addressLine) {
+        updateObj.address = {};
+        if (addressLine !== undefined) updateObj.address.addressLine = addressLine;
+        if (state !== undefined) updateObj.address.state = state;
+        if (city !== undefined) updateObj.address.city = city;
+        if (pincode !== undefined) updateObj.address.pincode = pincode;
+        // Accept nested address update from request body as well
+        if (address) {
+          if (address.addressLine !== undefined)
+            updateObj.address.addressLine = address.addressLine;
+          if (address.state !== undefined)
+            updateObj.address.state = address.state;
+          if (address.city !== undefined) updateObj.address.city = address.city;
+          if (address.pincode !== undefined)
+            updateObj.address.pincode = address.pincode;
+        }
+      }
+
+      // Remove empty address object if no fields set
+      if (updateObj.address && Object.keys(updateObj.address).length === 0) {
+        delete updateObj.address;
+      }
+
+      // Update the SubAdmin
+      const updatedSubAdmin = await UserModel.findOneAndUpdate(
+        { _id: id, role: "SubAdmin" },
+        { $set: updateObj },
+        { new: true, runValidators: true, context: "query" }
+      ).select("-password -otp -otpExpires -__v"); // Exclude sensitive fields
+
+      if (!updatedSubAdmin) {
+        return res.status(404).json({ message: "Sub-admin not found." });
+      }
+
+      res.status(200).json({
+        message: "Sub-admin updated successfully.",
+        subAdmin: updatedSubAdmin,
+      });
+    } catch (error) {
+      console.error("Error updating sub-admin:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
   getAllSubAdmins = async (req, res) => {
     if (req.user.role !== "Admin") {
       return res.status(403).json({
