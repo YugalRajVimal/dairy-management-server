@@ -462,21 +462,21 @@ class SubAdminController {
         }
 
         // Check if the same route is already assigned to any other vendor
-        const existingVendorOnRoute = await UserModel.findOne({
-          _id: { $ne: vendor._id },
-          onboardedBy: req.user.id,
-          role: "Vendor",
-          $or: [
-            { route: normalizedRoute },
-            { route: String(normalizedRoute) },
-            { route: Number(normalizedRoute) },
-          ],
-        });
-        if (existingVendorOnRoute) {
-          return res.status(400).json({
-            message: `Route "${route}" is already assigned to another vendor.`,
-          });
-        }
+        // const existingVendorOnRoute = await UserModel.findOne({
+        //   _id: { $ne: vendor._id },
+        //   onboardedBy: req.user.id,
+        //   role: "Vendor",
+        //   $or: [
+        //     { route: normalizedRoute },
+        //     { route: String(normalizedRoute) },
+        //     { route: Number(normalizedRoute) },
+        //   ],
+        // });
+        // if (existingVendorOnRoute) {
+        //   return res.status(400).json({
+        //     message: `Route "${route}" is already assigned to another vendor.`,
+        //   });
+        // }
       }
 
       // Apply updates, only those fields that are provided in body
