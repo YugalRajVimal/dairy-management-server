@@ -127,28 +127,29 @@ class SupervisorController {
         });
       }
   
-      // 2. Run vendor + milk queries in parallel
-      const [allVendorsCount, vendorIds, milkAggregation] = await Promise.all([
+      // 2. Get vendorIds first, then use for other queries to avoid using before initialization
+      // Fetch vendor IDs (first)
+      const vendorIds = await UserModel.find({
+        role: "Vendor",
+        route: { $in: routes },
+      })
+        .distinct("vendorId")
+        .lean();
+
+      // Run counts and aggregations in parallel (after vendorIds is available)
+      const [allVendorsCount, milkAggregation] = await Promise.all([
         // Count vendors
         UserModel.countDocuments({
           role: "Vendor",
           route: { $in: routes },
         }),
-  
-        // Fetch vendor IDs
-        UserModel.find({
-          role: "Vendor",
-          route: { $in: routes },
-        })
-          .distinct("vendorId")
-          .lean(),
-  
         // Aggregate milk in parallel
         MilkReportModel.aggregate([
           { $match: { vlcUploaderCode: { $in: vendorIds || [] } } },
           { $group: { _id: null, total: { $sum: "$milkWeightLtr" } } },
         ]),
       ]);
+    
   
       const milkWeightSum =
         milkAggregation?.length ? milkAggregation[0].total : 0;
