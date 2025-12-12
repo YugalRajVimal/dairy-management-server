@@ -303,17 +303,14 @@ class SupervisorController {
         message: "Unauthorized: Only Supervisor can perform this action.",
       });
     }
-  
+
     try {
-      const { startDate, endDate, page = 1, limit = 10 } = req.query;
-      const pageNumber = parseInt(page);
-      const pageLimit = parseInt(limit);
-      const skip = (pageNumber - 1) * pageLimit;
-  
+      const { startDate, endDate } = req.query;
+
       // Fetch supervisor routes
       const supervisor = await UserModel.findById(req.user.id)
         .select("supervisorRoutes");
-  
+
       if (
         !supervisor ||
         !Array.isArray(supervisor.supervisorRoutes) ||
@@ -323,18 +320,19 @@ class SupervisorController {
           message: "Supervisor's route information not found.",
         });
       }
-  
+
       // Fast vendor lookup
       const vendorIds = await UserModel.find({
         role: "Vendor",
         route: { $in: supervisor.supervisorRoutes },
       }).distinct("vendorId");
-  
+
       // Main aggregation
       const matchStage = {
         vlcUploaderCode: { $in: vendorIds },
       };
-  
+
+      // Add date filtering
       if (startDate || endDate) {
         matchStage.docDate = {};
         if (startDate) matchStage.docDate.$gte = new Date(startDate);
@@ -344,25 +342,25 @@ class SupervisorController {
           matchStage.docDate.$lte = end;
         }
       }
-  
+
+      // No search, no pagination
+
       const result = await MilkReportModel.aggregate([
         { $match: matchStage },
-  
+
         {
           $facet: {
             metadata: [
               { $count: "total" },
               { $project: { total: 1 } },
             ],
-  
+
             weightSum: [
               { $group: { _id: null, total: { $sum: "$milkWeightLtr" } } },
             ],
-  
-            paginatedData: [
+
+            allData: [
               { $sort: { docDate: -1 } },
-              { $skip: skip },
-              { $limit: pageLimit },
               {
                 $project: {
                   vlcUploaderCode: 1,
@@ -375,20 +373,17 @@ class SupervisorController {
           },
         },
       ]);
-  
+
       const totalReports = result[0].metadata[0]?.total || 0;
       const milkWeightSum = result[0].weightSum[0]?.total || 0;
-  
+
       return res.status(200).json({
         message: "Milk reports fetched successfully.",
         milkWeightSum,
-        page: pageNumber,
-        limit: pageLimit,
         total: totalReports,
-        totalPages: Math.ceil(totalReports / pageLimit),
-        data: result[0].paginatedData, // optional
+        data: result[0].allData,
       });
-  
+
     } catch (error) {
       console.error("Error fetching milk reports:", error);
       return res.status(500).json({ message: "Internal Server Error" });
@@ -457,13 +452,16 @@ class SupervisorController {
         message: "Unauthorized: Only Sub Admins can perform this action.",
       });
     }
-  
+
     try {
-      const { page = 1, limit = 20 } = req.query;
-  
+      let { page = 1, limit = 20, search = "" } = req.query;
+      page = Number(page);
+      limit = Number(limit);
+      const skip = (page - 1) * limit;
+
       const supervisor = await UserModel.findById(req.user.id)
         .select("supervisorRoutes");
-  
+
       if (
         !supervisor ||
         !Array.isArray(supervisor.supervisorRoutes) ||
@@ -473,27 +471,45 @@ class SupervisorController {
           message: "Supervisor's route information not found.",
         });
       }
-  
-      const skip = (page - 1) * limit;
-  
+
+      // Build search conditions, if search is provided
+      let searchFilter = {};
+      if (search && typeof search === "string" && search.trim() !== "") {
+        const regex = new RegExp(search.trim(), "i");
+        searchFilter = {
+          $or: [
+            { name: regex },
+            { email: regex },
+            { phoneNo: regex },
+            { vendorId: regex },
+            { "address.addressLine": regex },
+            { "address.city": regex },
+            { "address.state": regex },
+            { "address.pincode": regex },
+            // You could add more fields to search if needed
+          ]
+        };
+      }
+
       const pipeline = [
         {
           $match: {
             role: "Vendor",
             route: { $in: supervisor.supervisorRoutes },
+            ...searchFilter,
           },
         },
-  
+
         {
           $facet: {
             metadata: [
               { $count: "total" }
             ],
-  
+
             data: [
               { $sort: { createdAt: -1 } },
               { $skip: skip },
-              { $limit: Number(limit) },
+              { $limit: limit },
               {
                 $project: {
                   password: 0,
@@ -506,22 +522,22 @@ class SupervisorController {
           }
         }
       ];
-  
+
       const result = await UserModel.aggregate(pipeline);
-  
+
       const total = result[0].metadata[0]?.total || 0;
-  
+
       return res.status(200).json({
         message: "Vendors fetched successfully.",
         vendors: result[0].data,
         pagination: {
-          page: Number(page),
-          limit: Number(limit),
+          page: page,
+          limit: limit,
           total,
           totalPages: Math.ceil(total / limit),
         },
       });
-  
+
     } catch (error) {
       console.error("Error fetching Vendors:", error);
       return res.status(500).json({ message: "Internal Server Error" });
@@ -537,19 +553,19 @@ class SupervisorController {
         return "";
       }
     };
-  
+
     try {
       if (req.user.role !== "Supervisor") {
         return res.status(403).json({ message: "Unauthorized" });
       }
-  
+
       const { vendorId } = req.params;
       const { startDate, endDate } = req.query;
-  
+
       if (!vendorId) {
         return res.status(400).json({ message: "vendorId is required" });
       }
-  
+
       // Fetch vendor
       const vendor = await UserModel.findOne({
         vendorId,
@@ -557,24 +573,26 @@ class SupervisorController {
       })
         .select("name email phoneNo route vendorId")
         .lean();
-  
+
       if (!vendor) {
         return res.status(404).json({ message: "Vendor not found" });
       }
-  
+
       // Build date filter only once
       const dateFilter = {};
       if (startDate || endDate) {
         dateFilter.docDate = {};
         if (startDate) dateFilter.docDate.$gte = new Date(startDate);
-  
+
         if (endDate) {
           const end = new Date(endDate);
           end.setHours(23, 59, 59, 999);
           dateFilter.docDate.$lte = end;
         }
       }
-  
+
+      // No search filters applied
+
       // Run queries in parallel with descending order for latest on top
       const [milkRaw, salesRaw, assetsRaw] = await Promise.all([
         MilkReportModel.find({
@@ -584,9 +602,9 @@ class SupervisorController {
           .select(
             "docDate shift vlcUploaderCode vlcName milkWeightLtr fatPercentage snfPercentage edited history uploadedOn"
           )
-          .sort({ docDate: -1 }) // <-- latest on top by docDate
+          .sort({ docDate: -1 })
           .lean(),
-  
+
         SalesReportModel.find({
           vlcUploaderCode: vendorId,
           ...dateFilter,
@@ -594,17 +612,19 @@ class SupervisorController {
           .select(
             "docDate vlcUploaderCode itemCode itemName quantity edited history uploadedOn"
           )
-          .sort({ docDate: -1 }) // <-- latest on top by docDate
+          .sort({ docDate: -1 })
           .lean(),
-  
-        AssetsReportModel.find({ vlcCode: vendorId })
+
+        AssetsReportModel.find({
+          vlcCode: vendorId,
+        })
           .select(
             "uploadedOn uploadedBy vlcCode srNo stockNo rt duplicate vlcName status cStatus can lid pvc dps keyboard printer charger stripper solar controller ews display battery bond vspSign history"
           )
-          .sort({ uploadedOn: -1 }) // latest on top by uploadedOn
+          .sort({ uploadedOn: -1 })
           .lean(),
       ]);
-  
+
       // Format data efficiently
       const milkReports = milkRaw.map((r) => ({
         "DOC DATE": formatDate(r.docDate),
@@ -626,7 +646,7 @@ class SupervisorController {
           "EDITED ON": formatDate(h.editedOn),
         })),
       }));
-  
+
       const salesReports = salesRaw.map((r) => ({
         "DOC DATE": formatDate(r.docDate),
         "VLC CODE": r.vlcUploaderCode || "",
@@ -643,7 +663,7 @@ class SupervisorController {
           "EDITED ON": formatDate(h.editedOn),
         })),
       }));
-  
+
       const assetsReports = assetsRaw.map((r) => ({
         "UPLOADED ON": formatDate(r.uploadedOn),
         "UPLOADED BY": r.uploadedBy || "",
@@ -694,7 +714,7 @@ class SupervisorController {
           "CHANGED ON": formatDate(h.changedOn),
         })),
       }));
-  
+
       return res.status(200).json({
         message: "Vendor reports fetched successfully",
         vendor,

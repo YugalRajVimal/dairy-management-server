@@ -118,7 +118,7 @@ class VendorController {
   getVendorMilkReport = async (req, res) => {
     try {
       const vendorId = req.user?.vendorId;
-      const { startDate, endDate, page = 1, limit = 20 } = req.query;
+      const { startDate, endDate, page = 1, limit = 20, search = "" } = req.query;
   
       if (!vendorId) {
         return res.status(400).json({ success: false, message: "Vendor ID is required." });
@@ -130,14 +130,44 @@ class VendorController {
       }
   
       const query = { vlcUploaderCode: vendorId };
-  
+
       if (startDate && endDate) {
         query.docDate = {
           $gte: new Date(startDate),
           $lte: new Date(endDate),
         };
       }
-  
+
+      // Add search feature
+      if (search && search.trim() !== "") {
+        const searchString = search.trim();
+        const regex = new RegExp(searchString, "i");
+        const orQueries = [
+          { shift: regex },
+          { vlcUploaderCode: regex },
+          { vlcName: regex },
+        ];
+
+        // For number fields, try to match if search is number
+        const isNumberSearch = !isNaN(searchString) && searchString !== "";
+        if (isNumberSearch) {
+          const searchNum = Number(searchString);
+          orQueries.push(
+            { milkWeightLtr: searchNum },
+            { fatPercentage: searchNum },
+            { snfPercentage: searchNum }
+          );
+        }
+
+        // For docDate, allow searching as string YYYY-MM-DD or DD-MM-YYYY (by formatting date below and filtering inside .map if needed)
+        // But since MongoDB only supports date natively, we'll allow direct date equality
+        if (!isNaN(Date.parse(searchString))) {
+          orQueries.push({ docDate: new Date(searchString) });
+        }
+
+        query.$or = orQueries;
+      }
+
       const skip = (page - 1) * limit;
       const totalCount = await MilkReportModel.countDocuments(query);
   
@@ -153,7 +183,7 @@ class VendorController {
         return `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
       };
   
-      const milkReports = milkReportsRaw.map((report) => ({
+      let milkReports = milkReportsRaw.map((report) => ({
         docDate: formatDate(report.docDate),
         shift: report.shift || "",
         vlcUploaderCode: report.vlcUploaderCode || "",
@@ -173,6 +203,21 @@ class VendorController {
           "EDITED ON": h.editedOn ? formatDate(h.editedOn) : "",
         })),
       }));
+
+      // If searching by formatted date string (DD-MM-YYYY), filter here
+      if (search && search.trim() !== "" && milkReports.length > 0) {
+        const searchString = search.trim().toLowerCase();
+        // If it's not number/date (which are already handled above), search in stringified fields as fallback
+        milkReports = milkReports.filter((report) =>
+          report.docDate?.toLowerCase().includes(searchString) ||
+          report.shift?.toLowerCase().includes(searchString) ||
+          report.vlcUploaderCode?.toLowerCase().includes(searchString) ||
+          report.vlcName?.toLowerCase().includes(searchString) ||
+          String(report.milkWeightLtr).includes(searchString) ||
+          String(report.fatPercentage).includes(searchString) ||
+          String(report.snfPercentage).includes(searchString)
+        );
+      }
   
       return res.status(200).json({
         success: true,
@@ -257,7 +302,7 @@ class VendorController {
   getVendorSalesReport = async (req, res) => {
     try {
       const vendorId = req.user?.vendorId;
-      const { startDate, endDate, page = 1, limit = 20 } = req.query;
+      const { startDate, endDate, page = 1, limit = 20, search = "" } = req.query;
 
       if (!vendorId) {
         return res.status(400).json({ success: false, message: "Vendor ID is required." });
@@ -275,6 +320,31 @@ class VendorController {
           $gte: new Date(startDate),
           $lte: new Date(endDate),
         };
+      }
+
+      // Add search feature
+      if (search && search.trim() !== "") {
+        const searchString = search.trim();
+        const regex = new RegExp(searchString, "i");
+        const orQueries = [
+          { vlcUploaderCode: regex },
+          { itemCode: regex },
+          { itemName: regex },
+        ];
+
+        // If search is a number, include quantity as possible match
+        const isNumberSearch = !isNaN(searchString) && searchString !== "";
+        if (isNumberSearch) {
+          const searchNum = Number(searchString);
+          orQueries.push({ quantity: searchNum });
+        }
+
+        // For docDate, allow searching as YYYY-MM-DD date string
+        if (!isNaN(Date.parse(searchString))) {
+          orQueries.push({ docDate: new Date(searchString) });
+        }
+
+        query.$or = orQueries;
       }
 
       const skip = (page - 1) * limit;
