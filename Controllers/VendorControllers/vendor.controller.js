@@ -114,7 +114,11 @@ class VendorController {
   //       .json({ success: false, message: "Internal server error." });
   //   }
   // };
+  isValidDate = (d) => {
+    return d instanceof Date && !isNaN(d.getTime());
+  };
 
+  
   getVendorMilkReport = async (req, res) => {
     try {
       const vendorId = req.user?.vendorId;
@@ -135,7 +139,7 @@ class VendorController {
         const start = new Date(startDate);
         const end = new Date(endDate);
       
-        if (!isValidDate(start) || !isValidDate(end)) {
+        if (!this.isValidDate(start) || !this.isValidDate(end)) {
           return res.status(400).json({
             success: false,
             message: "Invalid startDate or endDate format. Use YYYY-MM-DD.",
@@ -173,7 +177,7 @@ class VendorController {
         // For docDate, allow searching as string YYYY-MM-DD or DD-MM-YYYY (by formatting date below and filtering inside .map if needed)
         // But since MongoDB only supports date natively, we'll allow direct date equality
         const searchDate = new Date(searchString);
-        if (isValidDate(searchDate)) {
+        if (this.isValidDate(searchDate)) {
           orQueries.push({ docDate: searchDate });
         }
         
