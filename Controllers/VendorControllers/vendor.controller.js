@@ -132,11 +132,22 @@ class VendorController {
       const query = { vlcUploaderCode: vendorId };
 
       if (startDate && endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+      
+        if (!isValidDate(start) || !isValidDate(end)) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid startDate or endDate format. Use YYYY-MM-DD.",
+          });
+        }
+      
         query.docDate = {
-          $gte: new Date(startDate),
-          $lte: new Date(endDate),
+          $gte: start,
+          $lte: end,
         };
       }
+      
 
       // Add search feature
       if (search && search.trim() !== "") {
@@ -161,9 +172,11 @@ class VendorController {
 
         // For docDate, allow searching as string YYYY-MM-DD or DD-MM-YYYY (by formatting date below and filtering inside .map if needed)
         // But since MongoDB only supports date natively, we'll allow direct date equality
-        if (!isNaN(Date.parse(searchString))) {
-          orQueries.push({ docDate: new Date(searchString) });
+        const searchDate = new Date(searchString);
+        if (isValidDate(searchDate)) {
+          orQueries.push({ docDate: searchDate });
         }
+        
 
         query.$or = orQueries;
       }
