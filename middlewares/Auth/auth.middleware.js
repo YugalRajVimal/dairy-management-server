@@ -32,7 +32,6 @@ const jwtAuth = async (req, res, next) => {
       role: payload.role,
       vendorId: payload.vendorId ? payload.vendorId : null,
       supervisorId: payload.supervisorId ? payload.supervisorId : null,
-
     };
     req.user = user;
 
@@ -52,12 +51,17 @@ const jwtAuth = async (req, res, next) => {
       _id: payload.id,
       role: payload.role,
     });
-
+console.log(dbUser);
     // If no user is found in the database with the given ID
     if (!dbUser) {
       return res
         .status(401)
         .json({ error: "Unauthorized: User not found in database." });
+    }
+
+    // If the user is a vendor and is disabled, send an error
+    if (dbUser.role === "Vendor" && dbUser.disabled) {
+      return res.status(403).json({ error: "Your vendor account is disabled. Please contact support." });
     }
 
     // Proceed to the next middleware or route handler

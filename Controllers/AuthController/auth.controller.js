@@ -6,6 +6,7 @@ import ExpiredTokenModel from "../../Schema/expired-token.schema.js";
 
 class AuthController {
   // ✅ Check Authorization
+  // ✅ Check Authorization
   checkAuth = async (req, res) => {
     try {
       return res.status(200).json({ message: "Authorized" });
@@ -121,6 +122,11 @@ class AuthController {
 
       if (role === "SubAdmin" || role === "Admin") {
         return res.status(403).json({ message: "Invalid Mail" });
+      }
+
+      // If user is a Vendor and is disabled
+      if (role === "Vendor" && user.disabled === true) {
+        return res.status(403).json({ message: "This Vendor account is disabled. Please contact support." });
       }
 
       // ✅ Generate 6-digit OTP
