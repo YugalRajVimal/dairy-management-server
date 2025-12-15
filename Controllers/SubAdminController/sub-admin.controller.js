@@ -793,6 +793,7 @@ class SubAdminController {
       const existingSupervisorWithRoute = await UserModel.findOne({
         supervisorRoutes: { $in: routes },
         role: "Supervisor",
+        onboardedBy: req.user.id,
       });
 
       if (existingSupervisorWithRoute) {
