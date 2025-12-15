@@ -454,10 +454,18 @@ class SupervisorController {
     }
 
     try {
-      let { page = 1, limit = 20, search = "" } = req.query;
-      page = Number(page);
-      limit = Number(limit);
-      const skip = (page - 1) * limit;
+      let { page = 1, limit, search = "" } = req.query;
+      page = Number(page) || 1;
+
+      // If no limit is set or limit is not a number, show all data
+      let applyPagination = true;
+      if (limit === undefined || limit === null || limit === "" || isNaN(Number(limit))) {
+        applyPagination = false;
+        limit = 0; // Special flag for unlimited
+      } else {
+        limit = Number(limit);
+      }
+      let skip = applyPagination ? (page - 1) * limit : 0;
 
       const supervisor = await UserModel.findById(req.user.id)
         .select("supervisorRoutes");
@@ -491,6 +499,20 @@ class SupervisorController {
         };
       }
 
+      let pipelineData = [{ $sort: { createdAt: -1 } }];
+      if (applyPagination) {
+        pipelineData.push({ $skip: skip });
+        pipelineData.push({ $limit: limit });
+      }
+      pipelineData.push({
+        $project: {
+          password: 0,
+          otp: 0,
+          otpExpires: 0,
+          __v: 0
+        }
+      });
+
       const pipeline = [
         {
           $match: {
@@ -499,26 +521,12 @@ class SupervisorController {
             ...searchFilter,
           },
         },
-
         {
           $facet: {
             metadata: [
               { $count: "total" }
             ],
-
-            data: [
-              { $sort: { createdAt: -1 } },
-              { $skip: skip },
-              { $limit: limit },
-              {
-                $project: {
-                  password: 0,
-                  otp: 0,
-                  otpExpires: 0,
-                  __v: 0
-                }
-              }
-            ]
+            data: pipelineData
           }
         }
       ];
@@ -527,14 +535,19 @@ class SupervisorController {
 
       const total = result[0].metadata[0]?.total || 0;
 
+      // If not paginated, page=1, limit=total, totalPages=1
+      const effectivePage = applyPagination ? page : 1;
+      const effectiveLimit = applyPagination ? limit : total;
+      const totalPages = applyPagination ? Math.ceil(total / (limit || 1)) : 1;
+
       return res.status(200).json({
         message: "Vendors fetched successfully.",
         vendors: result[0].data,
         pagination: {
-          page: page,
-          limit: limit,
+          page: effectivePage,
+          limit: effectiveLimit,
           total,
-          totalPages: Math.ceil(total / limit),
+          totalPages,
         },
       });
 
