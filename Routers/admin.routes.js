@@ -7,6 +7,23 @@ const adminRouter = express.Router();
 
 const adminController = new AdminController();
 
+// Enable Maintenance Mode
+adminRouter.post("/enable-maintenance-mode", jwtAuth, (req, res) => {
+  adminController.enableMaintenanceMode(req, res);
+});
+
+// Disable Maintenance Mode
+adminRouter.post("/disable-maintenance-mode", jwtAuth, (req, res) => {
+  adminController.disableMaintenanceMode(req, res);
+});
+
+// Get Maintenance Mode Status
+adminRouter.get("/get-maintenance-status", jwtAuth, (req, res) => {
+  adminController.getMaintenanceStatus(req, res);
+});
+
+
+
 adminRouter.get("/", (req, res) => {
   res.send("Welcome to ABC Company  Admin APIs");
 });

@@ -1502,13 +1502,29 @@ class SubAdminController {
     }
 
     try {
-      const { page = 1, limit = 10, search = "" } = req.query;
+      const { page = 1, limit = 10, search = "", startDate = "", endDate = "", shift = "" } = req.query;
       const skip = (parseInt(page) - 1) * parseInt(limit);
       const userId = req.user.id;
       const searchText = (search || "").trim();
 
       // Build MongoDB query
       const baseMatch = { uploadedBy: userId };
+      // Add shift filter (if set and not "All")
+      if (shift && shift !== "All") {
+        baseMatch.shift = shift;
+      }
+      // Add startDate/endDate filter (docDate field)
+      if (startDate && endDate) {
+        baseMatch.docDate = {
+          $gte: new Date(startDate),
+          $lte: new Date(endDate + "T23:59:59.999Z"),
+        };
+      } else if (startDate) {
+        baseMatch.docDate = { $gte: new Date(startDate) };
+      } else if (endDate) {
+        baseMatch.docDate = { $lte: new Date(endDate + "T23:59:59.999Z") };
+      }
+
       let searchOr = [];
 
       if (searchText !== "") {
@@ -1536,7 +1552,7 @@ class SubAdminController {
           }
         }
 
-        console.log(normalizedDate);
+        //console.log(normalizedDate);
 
         searchOr = [
           { shift: regex },
@@ -1920,7 +1936,7 @@ class SubAdminController {
     }
 
     try {
-      const { page = 1, limit = 10, search = "" } = req.query;
+      const { page = 1, limit = 10, search = "", startDate = "", endDate = "" } = req.query;
       const skip = (parseInt(page) - 1) * parseInt(limit);
 
       const userId = req.user.id;
@@ -1928,6 +1944,19 @@ class SubAdminController {
 
       // Build MongoDB query
       const baseMatch = { uploadedBy: userId };
+
+      // Add startDate/endDate filter (docDate field)
+      if (startDate && endDate) {
+        baseMatch.docDate = {
+          $gte: new Date(startDate),
+          $lte: new Date(endDate + "T23:59:59.999Z"),
+        };
+      } else if (startDate) {
+        baseMatch.docDate = { $gte: new Date(startDate) };
+      } else if (endDate) {
+        baseMatch.docDate = { $lte: new Date(endDate + "T23:59:59.999Z") };
+      }
+
       let searchOr = [];
 
       if (searchText !== "") {

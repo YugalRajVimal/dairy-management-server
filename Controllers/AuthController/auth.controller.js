@@ -3,12 +3,32 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import UserModel from "../../Schema/user.schema.js";
 import ExpiredTokenModel from "../../Schema/expired-token.schema.js";
+import Maintenance from "../../Schema/maintenance.schema.js";
 
 class AuthController {
   // ✅ Check Authorization
   // ✅ Check Authorization
   checkAuth = async (req, res) => {
     try {
+      const { role } = req.user || {};
+
+      console.log(role);
+
+      if (role !== 'Admin' && role !== 'Supervisor' &&  role !== 'Vendor') {
+
+        const maintenanceStatus = await Maintenance.findOne({});
+
+        console.log("-------", maintenanceStatus.isMaintenanceMode);
+
+        if (maintenanceStatus && maintenanceStatus.isMaintenanceMode) {
+          return res.status(423).json({
+            message: "The application is under maintenance. Please try again later.",
+          });
+        }
+      }
+
+   
+
       return res.status(200).json({ message: "Authorized" });
     } catch (error) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -85,16 +105,16 @@ class AuthController {
       await UserModel.findByIdAndUpdate(
         user._id,
         {
-          otp: "000000",
+          otp,
           otpExpiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 min expiry
         },
         { new: true }
       );
 
       // ✅ Send OTP via mail (async, don't block request)
-      // sendMail(email, "Your OTP Code", `Your OTP is: ${otp}`).catch(
-      //   console.error
-      // );
+      sendMail(email, "Your OTP Code", `Your OTP is: ${otp}`).catch(
+        console.error
+      );
 
       return res.status(200).json({ message: "OTP sent successfully" });
     } catch (error) {

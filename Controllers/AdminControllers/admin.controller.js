@@ -1,10 +1,63 @@
 import sendMail from "../../config/nodeMailer.config.js";
 import IssuedAssetsToSubAdminModel from "../../Schema/issued.assets.subadmin.schema.js";
+import Maintenance from "../../Schema/maintenance.schema.js";
 import RoutesModel from "../../Schema/routes.schema.js";
 import UsedAssetsOfSubAdminModel from "../../Schema/used.assets.vendor.schema.js";
 import UserModel from "../../Schema/user.schema.js";
 
 class AdminController {
+
+
+
+  // Enable Maintenance Mode
+  enableMaintenanceMode = async (req, res) => {
+    try {
+      let maintenanceDoc = await Maintenance.findOne();
+      if (!maintenanceDoc) {
+        maintenanceDoc = new Maintenance({ isMaintenanceMode: true });
+      } else {
+        maintenanceDoc.isMaintenanceMode = true;
+      }
+      await maintenanceDoc.save();
+      return res.status(200).json({ message: "Maintenance mode enabled successfully." });
+    } catch (error) {
+      console.error("Error enabling maintenance mode:", error);
+      return res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
+  // Disable Maintenance Mode
+  disableMaintenanceMode = async (req, res) => {
+    try {
+      let maintenanceDoc = await Maintenance.findOne();
+      if (!maintenanceDoc) {
+        maintenanceDoc = new Maintenance({ isMaintenanceMode: false });
+      } else {
+        maintenanceDoc.isMaintenanceMode = false;
+      }
+      await maintenanceDoc.save();
+      return res.status(200).json({ message: "Maintenance mode disabled successfully." });
+    } catch (error) {
+      console.error("Error disabling maintenance mode:", error);
+      return res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
+  // Get current maintenance mode status
+  getMaintenanceStatus = async (req, res) => {
+    try {
+      // Try to fetch existing maintenance document
+      let maintenanceDoc = await Maintenance.findOne();
+      // If no document, default to false (normal mode)
+      const isMaintenanceMode = maintenanceDoc ? !!maintenanceDoc.isMaintenanceMode : false;
+      return res.status(200).json({ isMaintenanceMode });
+    } catch (error) {
+      console.error("Error fetching maintenance status:", error);
+      return res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+
+
   getProfileDetails = async (req, res) => {
     try {
       if (!req.user || !req.user.id) {
