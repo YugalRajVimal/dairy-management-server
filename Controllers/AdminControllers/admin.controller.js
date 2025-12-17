@@ -378,15 +378,17 @@ class AdminController {
 
       // Send the OTP to the sub-admin's email
       const mailSubject =
-        "Welcome to ABC Company - Verify Your Sub-Admin Account";
-      const mailMessage = `Dear ${name},\n\nYour sub-admin account has been created. Please use your email to log into your account and log in:\n\nRegards,\nABC Company Team`;
+        "Welcome to BHOLE BABA MILK FOOD INDUSTRIES
+DHOLPUR PVT LTD - Verify Your Sub-Admin Account";
+      const mailMessage = `Dear ${name},\n\nYour sub-admin account has been created. Please use your email to log into your account and log in:\n\nRegards,\nBHOLE BABA MILK FOOD INDUSTRIES
+DHOLPUR PVT LTD Team`;
 
-      try {
-        await sendMail(email, mailSubject, mailMessage); // Use the lowercase email
-      } catch (mailError) {
-        console.error("Error sending mail to sub-admin:", mailError);
-        // Optionally, you could respond with a warning, but don't block onboarding
-      }
+      // try {
+      //   await sendMail(email, mailSubject, mailMessage); // Use the lowercase email
+      // } catch (mailError) {
+      //   console.error("Error sending mail to sub-admin:", mailError);
+      //   // Optionally, you could respond with a warning, but don't block onboarding
+      // }
 
       // Respond with success message and sub-admin details, send zone as well
       res.status(201).json({

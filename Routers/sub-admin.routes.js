@@ -9,8 +9,28 @@ const subAdminRouter = express.Router();
 const subAdminController = new SubAdminController();
 
 subAdminRouter.get("/", (req, res) => {
-  res.send("Welcome to ABC Company  Admin APIs");
+  res.send("Welcome to BHOLE BABA MILK FOOD INDUSTRIES
+DHOLPUR PVT LTD  Admin APIs");
 });
+
+// Send OTP for setting or updating password (SubAdmin only)
+subAdminRouter.post(
+  "/send-set-password-otp",
+  jwtAuth,
+  (req, res) => {
+    subAdminController.sendSetPasswordOtp(req, res);
+  }
+);
+
+// Set or update password using OTP (SubAdmin only)
+subAdminRouter.post(
+  "/set-or-update-password",
+  jwtAuth,
+  (req, res) => {
+    subAdminController.setOrUpdatePassword(req, res);
+  }
+);
+
 
 subAdminRouter.get("/get-profile-details", jwtAuth, (req, res) => {
   subAdminController.getProfileDetails(req, res);

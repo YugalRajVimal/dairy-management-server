@@ -9,6 +9,8 @@ import IssuedAssetsToSubAdminModel from "../../Schema/issued.assets.subadmin.sch
 import UsedAssetsOfSubAdminModel from "../../Schema/used.assets.vendor.schema.js";
 import RoutesModel from "../../Schema/routes.schema.js";
 import mongoose from "mongoose";
+import bcrypt from "bcrypt";
+
 
 class SubAdminController {
   getProfileDetails = async (req, res) => {
@@ -279,15 +281,17 @@ class SubAdminController {
       await newVendor.save();
 
       // Send the OTP to the vendor's email
-      const mailSubject = "Welcome to ABC Company - Verify Your Vendor Account";
-      const mailMessage = `Dear ${name},\n\nYour Vendor account has been created. Please use your email to log into your account:\n\nRegards,\nABC Company Team`;
+      // const mailSubject = "Welcome to BHOLE BABA MILK FOOD INDUSTRIES
+DHOLPUR PVT LTD - Verify Your Vendor Account";
+      // const mailMessage = `Dear ${name},\n\nYour Vendor account has been created. Please use your email to log into your account:\n\nRegards,\nBHOLE BABA MILK FOOD INDUSTRIES
+DHOLPUR PVT LTD Team`;
 
-      try {
-        await sendMail(email, mailSubject, mailMessage);
-      } catch (mailError) {
-        console.error("Error sending mail to vendor:", mailError);
-        // Optionally: do not block onboarding if mail fails
-      }
+      // try {
+      //   await sendMail(email, mailSubject, mailMessage);
+      // } catch (mailError) {
+      //   console.error("Error sending mail to vendor:", mailError);
+      //   // Optionally: do not block onboarding if mail fails
+      // }
 
       // Respond with success message and vendor details
       res.status(201).json({
@@ -839,16 +843,18 @@ class SubAdminController {
       await newSupervisor.save();
 
       // Send the OTP to the supervisor's email
-      const mailSubject =
-        "Welcome to ABC Company - Verify Your Supervisor Account";
-      const mailMessage = `Dear ${name},\n\nYour Supervisor account has been created. Please use your email to log into your account:\n\nRegards,\nABC Company Team`;
+      // const mailSubject =
+      //   "Welcome to BHOLE BABA MILK FOOD INDUSTRIES
+DHOLPUR PVT LTD - Verify Your Supervisor Account";
+      // const mailMessage = `Dear ${name},\n\nYour Supervisor account has been created. Please use your email to log into your account:\n\nRegards,\nBHOLE BABA MILK FOOD INDUSTRIES
+DHOLPUR PVT LTD Team`;
 
-      try {
-        await sendMail(email, mailSubject, mailMessage);
-      } catch (mailError) {
-        console.error("Error sending mail to supervisor:", mailError);
-        // Optionally, you could respond with a warning, but don't block onboarding
-      }
+      // try {
+      //   await sendMail(email, mailSubject, mailMessage);
+      // } catch (mailError) {
+      //   console.error("Error sending mail to supervisor:", mailError);
+      //   // Optionally, you could respond with a warning, but don't block onboarding
+      // }
 
       // Respond with success message and supervisor details, include supervisorRoues
       res.status(201).json({
@@ -1643,6 +1649,148 @@ class SubAdminController {
     }
   };
 
+
+  // Send OTP for setOrUpdatePassword
+  sendSetPasswordOtp = async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      // Only SubAdmin can use this functionality
+      const user = await UserModel.findById(userId);
+      if (!user || user.role !== "SubAdmin") {
+        return res.status(403).json({
+          message: "Unauthorized: Only Sub Admins can set/update password.",
+        });
+      }
+
+      // Generate 6-digit OTP
+      const passwordOtp = Math.floor(100000 + Math.random() * 900000).toString();
+
+      // Save OTP with expiry (10 minutes from now)
+      user.passwordOtp = passwordOtp;
+      user.passwordOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
+      await user.save();
+
+      // Send OTP via email (async)
+      sendMail(user.email, "Set or Update Password OTP", `Your OTP for setting/updating your password is: ${passwordOtp}`)
+        .catch(console.error);
+
+      return res.status(200).json({
+        message: "OTP sent successfully to your registered email.",
+      });
+    } catch (error) {
+      console.error("Error in sendSetPasswordOtp:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  };
+
+  // Create or update password for the logged-in SubAdmin user
+  setOrUpdatePassword = async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      // Only allow SubAdmin to set/update their own password
+      const user = await UserModel.findById(userId);
+      if (!user || user.role !== "SubAdmin") {
+        return res.status(403).json({
+          message: "Unauthorized: Only Sub Admins can set/update password.",
+        });
+      }
+
+      const { newPassword, passwordOtp } = req.body;
+      if (!newPassword || typeof newPassword !== "string" || newPassword.length < 6) {
+        return res.status(400).json({
+          message: "A new password of minimum 6 characters is required.",
+        });
+      }
+
+      if (!passwordOtp || typeof passwordOtp !== "string" || passwordOtp.length !== 6) {
+        return res.status(400).json({
+          message: "A valid 6-digit OTP is required.",
+        });
+      }
+
+      // Validate OTP and expiry
+      if (
+        !user.passwordOtp ||
+        user.passwordOtp !== passwordOtp ||
+        !user.passwordOtpExpires ||
+        user.passwordOtpExpires < new Date()
+      ) {
+        return res.status(400).json({
+          message: "Invalid or expired OTP.",
+        });
+      }
+
+      // Hash the password (use bcrypt)
+      let hashedPassword = newPassword;
+      try {
+        hashedPassword = await bcrypt.hash(newPassword, 10);
+      } catch (err) {
+        // Fallback (not recommended)
+        console.warn("bcrypt not available, saving plain password (insecure for production!)");
+      }
+
+      user.password = hashedPassword;
+
+      // Clear OTP after successful password set/update
+      user.passwordOtp = undefined;
+      user.passwordOtpExpires = undefined;
+      await user.save();
+
+      return res.status(200).json({
+        message: "Password set/updated successfully ✅",
+      });
+    } catch (error) {
+      console.error("Error in setOrUpdatePassword:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  };
+
+  // Verifies the sub-admin's current password (for sensitive operations)
+  verifyPassword = async (req, res) => {
+    try {
+      const subAdminId = req.user && req.user._id ? req.user._id : null;
+
+      if (!subAdminId) {
+        return res.status(401).json({ message: "Unauthorized: No SubAdmin ID found in session." });
+      }
+
+      const { password } = req.body;
+      if (!password || typeof password !== "string") {
+        return res.status(400).json({ message: "Password is required." });
+      }
+
+      const user = await UserModel.findById(subAdminId).select("+password");
+      if (!user) {
+        return res.status(404).json({ message: "SubAdmin not found." });
+      }
+
+      // Compare password using bcrypt
+      let isMatch = false;
+      try {
+        isMatch = await bcrypt.compare(password, user.password);
+      } catch (err) {
+        // fallback: insecure plain match if password not hashed (legacy/first run only)
+        isMatch = password === user.password;
+      }
+
+      if (!isMatch) {
+        return res.status(401).json({ message: "Invalid password." });
+      }
+
+      return res.status(200).json({ message: "Password verified." });
+    } catch (error) {
+      console.error("Error in verifyPassword:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  };
 
 
   updateMilkReport = async (req, res) => {

@@ -37,6 +37,15 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    password: {
+      type: String,
+    },
+    passwordOtp:{
+      type: String,
+    },
+    passwordOtpExpires: {
+      type: Date,
+    },
     disabled: { type: Boolean, default: false },
     lastLogin: { type: Date },
   },
