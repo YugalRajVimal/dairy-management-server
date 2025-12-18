@@ -282,9 +282,9 @@ class SubAdminController {
 
       // Send the OTP to the vendor's email
       // const mailSubject = "Welcome to BHOLE BABA MILK FOOD INDUSTRIES
-DHOLPUR PVT LTD - Verify Your Vendor Account";
+// DHOLPUR PVT LTD - Verify Your Vendor Account";
       // const mailMessage = `Dear ${name},\n\nYour Vendor account has been created. Please use your email to log into your account:\n\nRegards,\nBHOLE BABA MILK FOOD INDUSTRIES
-DHOLPUR PVT LTD Team`;
+// DHOLPUR PVT LTD Team`;
 
       // try {
       //   await sendMail(email, mailSubject, mailMessage);
@@ -842,19 +842,7 @@ DHOLPUR PVT LTD Team`;
       // Save the new supervisor to the database
       await newSupervisor.save();
 
-      // Send the OTP to the supervisor's email
-      // const mailSubject =
-      //   "Welcome to BHOLE BABA MILK FOOD INDUSTRIES
-DHOLPUR PVT LTD - Verify Your Supervisor Account";
-      // const mailMessage = `Dear ${name},\n\nYour Supervisor account has been created. Please use your email to log into your account:\n\nRegards,\nBHOLE BABA MILK FOOD INDUSTRIES
-DHOLPUR PVT LTD Team`;
 
-      // try {
-      //   await sendMail(email, mailSubject, mailMessage);
-      // } catch (mailError) {
-      //   console.error("Error sending mail to supervisor:", mailError);
-      //   // Optionally, you could respond with a warning, but don't block onboarding
-      // }
 
       // Respond with success message and supervisor details, include supervisorRoues
       res.status(201).json({

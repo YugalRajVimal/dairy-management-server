@@ -9,8 +9,7 @@ const subAdminRouter = express.Router();
 const subAdminController = new SubAdminController();
 
 subAdminRouter.get("/", (req, res) => {
-  res.send("Welcome to BHOLE BABA MILK FOOD INDUSTRIES
-DHOLPUR PVT LTD  Admin APIs");
+  res.send("Welcome to BHOLE BABA MILK FOOD INDUSTRIES DHOLPUR PVT LTD  Admin APIs");
 });
 
 // Send OTP for setting or updating password (SubAdmin only)

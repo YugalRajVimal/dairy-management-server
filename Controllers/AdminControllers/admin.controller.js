@@ -378,8 +378,7 @@ class AdminController {
 
       // Send the OTP to the sub-admin's email
       const mailSubject =
-        "Welcome to BHOLE BABA MILK FOOD INDUSTRIES
-DHOLPUR PVT LTD - Verify Your Sub-Admin Account";
+        "Welcome to BHOLE BABA MILK FOOD INDUSTRIES DHOLPUR PVT LTD - Verify Your Sub-Admin Account";
       const mailMessage = `Dear ${name},\n\nYour sub-admin account has been created. Please use your email to log into your account and log in:\n\nRegards,\nBHOLE BABA MILK FOOD INDUSTRIES
 DHOLPUR PVT LTD Team`;
 

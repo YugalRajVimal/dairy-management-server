@@ -8,8 +8,7 @@ const supervisorRouter = express.Router();
 const supervisorController = new SupervisorController();
 
 supervisorRouter.get("/", (req, res) => {
-  res.send("Welcome to BHOLE BABA MILK FOOD INDUSTRIES
-DHOLPUR PVT LTD  Supervisor APIs");
+  res.send("Welcome to BHOLE BABA MILK FOOD INDUSTRIES DHOLPUR PVT LTD  Supervisor APIs");
 });
 
 supervisorRouter.get("/get-profile-details", jwtAuth, (req, res) => {

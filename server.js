@@ -23,8 +23,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 const port = process.env.PORT || 8080;
 
 app.get("/", (req, res) => {
-  res.send("Welcome to BHOLE BABA MILK FOOD INDUSTRIES
-DHOLPUR PVT LTD App Server");
+  res.send("Welcome to BHOLE BABA MILK FOOD INDUSTRIES DHOLPUR PVT LTD App Server");
 });
 
 app.use("/api", router);

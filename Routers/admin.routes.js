@@ -25,8 +25,7 @@ adminRouter.get("/get-maintenance-status", jwtAuth, (req, res) => {
 
 
 adminRouter.get("/", (req, res) => {
-  res.send("Welcome to BHOLE BABA MILK FOOD INDUSTRIES
-DHOLPUR PVT LTD  Admin APIs");
+  res.send("Welcome to BHOLE BABA MILK FOOD INDUSTRIES DHOLPUR PVT LTD  Admin APIs");
 });
 
 adminRouter.get("/get-profile-details", jwtAuth, (req, res) => {
