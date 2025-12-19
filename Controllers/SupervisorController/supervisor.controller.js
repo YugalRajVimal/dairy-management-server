@@ -307,25 +307,28 @@ class SupervisorController {
     try {
       const { startDate, endDate } = req.query;
 
-      // Fetch supervisor routes
-      const supervisor = await UserModel.findById(req.user.id)
-        .select("supervisorRoutes");
-
-      if (
-        !supervisor ||
-        !Array.isArray(supervisor.supervisorRoutes) ||
-        supervisor.supervisorRoutes.length === 0
-      ) {
+      // Fetch supervisor and get their onboardedBy
+      const supervisor = await UserModel.findById(req.user.id).select("onboardedBy");
+      if (!supervisor || !supervisor.onboardedBy) {
         return res.status(400).json({
-          message: "Supervisor's route information not found.",
+          message: "Supervisor's onboardedBy information not found.",
         });
       }
 
-      // Fast vendor lookup
+      // Find all vendors that have the same onboardedBy as the supervisor's onboardedBy
       const vendorIds = await UserModel.find({
         role: "Vendor",
-        route: { $in: supervisor.supervisorRoutes },
+        onboardedBy: supervisor.onboardedBy,
       }).distinct("vendorId");
+
+      if (!vendorIds || vendorIds.length === 0) {
+        return res.status(200).json({
+          message: "No vendors found for this supervisor.",
+          milkWeightSum: 0,
+          total: 0,
+          data: [],
+        });
+      }
 
       // Main aggregation
       const matchStage = {
@@ -342,8 +345,6 @@ class SupervisorController {
           matchStage.docDate.$lte = end;
         }
       }
-
-      // No search, no pagination
 
       const result = await MilkReportModel.aggregate([
         { $match: matchStage },
@@ -374,14 +375,14 @@ class SupervisorController {
         },
       ]);
 
-      const totalReports = result[0].metadata[0]?.total || 0;
-      const milkWeightSum = result[0].weightSum[0]?.total || 0;
+      const totalReports = result[0]?.metadata?.[0]?.total || 0;
+      const milkWeightSum = result[0]?.weightSum?.[0]?.total || 0;
 
       return res.status(200).json({
         message: "Milk reports fetched successfully.",
         milkWeightSum,
         total: totalReports,
-        data: result[0].allData,
+        data: result[0]?.allData || [],
       });
 
     } catch (error) {
@@ -449,7 +450,7 @@ class SupervisorController {
   getAllVendors = async (req, res) => {
     if (req.user.role !== "Supervisor") {
       return res.status(403).json({
-        message: "Unauthorized: Only Sub Admins can perform this action.",
+        message: "Unauthorized: Only Supervisors can perform this action.",
       });
     }
 
@@ -461,16 +462,15 @@ class SupervisorController {
       let usePagination = true;
       if (!limit || isNaN(Number(limit))) {
         usePagination = false;
-        limit = undefined; // Will not be used
+        limit = undefined;
       } else {
         limit = Number(limit);
         if (limit <= 0) usePagination = false;
       }
-
-      // Skip is only relevant if paginating
       const skip = usePagination ? (page - 1) * limit : 0;
 
-      const supervisor = await UserModel.findById(req.user.id).select("supervisorRoutes");
+      // Fetch supervisor for supervisorRoutes and onboardedBy
+      const supervisor = await UserModel.findById(req.user.id).select("supervisorRoutes onboardedBy");
 
       if (
         !supervisor ||
@@ -482,7 +482,14 @@ class SupervisorController {
         });
       }
 
-      // Build search conditions, if search is provided
+      // Make sure supervisor has onboardedBy
+      if (!supervisor.onboardedBy) {
+        return res.status(400).json({
+          message: "Supervisor's onboardedBy information not found.",
+        });
+      }
+
+      // Build search filter if needed
       let searchFilter = {};
       if (search && typeof search === "string" && search.trim() !== "") {
         const regex = new RegExp(search.trim(), "i");
@@ -496,19 +503,22 @@ class SupervisorController {
             { "address.city": regex },
             { "address.state": regex },
             { "address.pincode": regex },
-            // Add more fields if needed
+            // More fields as needed
           ]
         };
       }
 
-      // Construct the aggregation pipeline conditionally based on pagination
+      // Aggregation filter must also check vendors with same onboardedBy as supervisor
+      const matchFilter = {
+        role: "Vendor",
+        route: { $in: supervisor.supervisorRoutes },
+        onboardedBy: supervisor.onboardedBy,
+        ...searchFilter,
+      };
+
       let pipeline = [
         {
-          $match: {
-            role: "Vendor",
-            route: { $in: supervisor.supervisorRoutes },
-            ...searchFilter,
-          },
+          $match: matchFilter,
         }
       ];
 
@@ -535,19 +545,19 @@ class SupervisorController {
         });
 
         const result = await UserModel.aggregate(pipeline);
-        const total = result[0].metadata[0]?.total || 0;
+        const total = result?.[0]?.metadata?.[0]?.total || 0;
         return res.status(200).json({
           message: "Vendors fetched successfully.",
-          vendors: result[0].data,
+          vendors: result?.[0]?.data || [],
           pagination: {
             page: page,
             limit: limit,
             total,
-            totalPages: Math.ceil(total / limit),
+            totalPages: Math.ceil(total / (limit || 1)),
           },
         });
       } else {
-        // No pagination: get all vendors
+        // No pagination, get all
         pipeline.push(
           { $sort: { createdAt: -1 } },
           {
