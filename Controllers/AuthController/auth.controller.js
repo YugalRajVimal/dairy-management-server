@@ -93,28 +93,47 @@ class AuthController {
       email = email.trim().toLowerCase();
       role = role.trim();
 
-      const user = await UserModel.findOne({ email, role }).lean();
+      // Find user and load OTP fields too
+      const user = await UserModel.findOne({ email, role });
       if (!user) {
         return res.status(404).json({ message: "User not found" });
+      }
+
+      const now = new Date();
+
+      // Initialize otpAttempts/otpSentTime fields if not set
+      if (!user.otpAttempts) user.otpAttempts = 0;
+      if (!user.otpSentTime) user.otpSentTime = null;
+
+      // If sent too many times (5+), check if enough time passed (15min)
+      if (user.otpAttempts >= 5) {
+        if (user.otpSentTime && now - user.otpSentTime < 15 * 60 * 1000) {
+          // Still under lockout
+          return res.status(429).json({ message: "OTP limit exceeded. Try again after 15 minutes." });
+        } else {
+          // Reset attempts after 15 min
+          user.otpAttempts = 0;
+        }
+      }
+
+      // If sent within 1 minute, do not allow resend
+      if (user.otpSentTime && now - user.otpSentTime < 60 * 1000) {
+        return res.status(429).json({ message: "OTP has been sent recently. Please wait 1 minute before trying again." });
       }
 
       // ✅ Generate 6-digit OTP
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-      // ✅ Save OTP with expiry (10 minutes)
-      await UserModel.findByIdAndUpdate(
-        user._id,
-        {
-          otp,
-          otpExpiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 min expiry
-        },
-        { new: true }
-      );
+      // Update user with new OTP, attempts, sent time, expiry
+      user.otp = otp;
+      user.otpAttempts = (user.otpAttempts || 0) + 1;
+      user.otpSentTime = now;
+      user.otpExpiresAt = new Date(now.getTime() + 10 * 60 * 1000); // 10 min expiry
+
+      await user.save();
 
       // ✅ Send OTP via mail (async, don't block request)
-      sendMail(email, "Your OTP Code", `Your OTP is: ${otp}`).catch(
-        console.error
-      );
+      sendMail(email, "Your OTP Code", `Your OTP is: ${otp}`).catch(console.error);
 
       return res.status(200).json({ message: "OTP sent successfully" });
     } catch (error) {

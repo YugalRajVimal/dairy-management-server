@@ -9,26 +9,6 @@ import IssuedAssetsToSubAdminModel from "../../Schema/issued.assets.subadmin.sch
 import UsedAssetsOfSubAdminModel from "../../Schema/used.assets.vendor.schema.js";
 
 class SupervisorController {
-  // getProfileDetails = async (req, res) => {
-  //   try {
-  //     if (!req.user || !req.user.id) {
-  //       return res.status(401).json({ message: "Unauthorized" });
-  //     }
-  //     const supervisor = await UserModel.findById(req.user.id).select(
-  //       "-password -otp -otpExpires -__v -route"
-  //     );
-  //     if (!supervisor) {
-  //       return res.status(404).json({ message: "Supervisor not found" });
-  //     }
-  //     res.status(200).json({
-  //       message: "Supervisor profile fetched successfully.",
-  //       profile: supervisor,
-  //     });
-  //   } catch (error) {
-  //     console.error("Error fetching supervisor profile:", error);
-  //     res.status(500).json({ message: "Internal Server Error" });
-  //   }
-  // };
 
   getProfileDetails = async (req, res) => {
     try {
@@ -54,57 +34,6 @@ class SupervisorController {
     }
   };
   
-  // getDashboardDetails = async (req, res) => {
-  //   if (req.user.role !== "Supervisor") {
-  //     return res.status(403).json({
-  //       message: "Unauthorized: Only Supervisor can perform this action.",
-  //     });
-  //   }
-
-  //   try {
-  //     // Get full supervisor profile, excluding sensitive fields
-  //     const supervisor = await UserModel.findById(req.user.id)
-  //       .select("-password -otp -otpExpires -__v");
-
-  //     if (!supervisor || !Array.isArray(supervisor.supervisorRoutes) || supervisor.supervisorRoutes.length === 0) {
-  //       return res.status(400).json({
-  //         message: "Supervisor's route information not found.",
-  //       });
-  //     }
-
-  //     // Count all vendors whose 'route' is in any of supervisor's routes
-  //     const allVendorsCount = await UserModel.countDocuments({
-  //       role: "Vendor",
-  //       route: { $in: supervisor.supervisorRoutes },
-  //     });
-
-  //     // Find all vendors whose route is in supervisor.supervisorRoutes, get their vendorIds
-  //     const vendorIds = await UserModel.find({
-  //       role: "Vendor",
-  //       route: { $in: supervisor.supervisorRoutes },
-  //     }).distinct("vendorId");
-
-  //     // Sum up all the milkWeightLtr uploaded by these vendors
-  //     const totalMilkWeightLtr = await MilkReportModel.aggregate([
-  //       { $match: { vlcUploaderCode: { $in: vendorIds } } },
-  //       { $group: { _id: null, total: { $sum: "$milkWeightLtr" } } },
-  //     ]);
-
-  //     const milkWeightSum =
-  //       totalMilkWeightLtr.length > 0 ? totalMilkWeightLtr[0].total : 0;
-
-  //     res.status(200).json({
-  //       message: "Dashboard details fetched successfully.",
-  //       allVendorsCount,
-  //       milkWeightSum,
-  //       supervisorProfile: supervisor,
-  //       supervisorRoutes: supervisor.supervisorRoutes,
-  //     });
-  //   } catch (error) {
-  //     console.error("Error fetching dashboard details:", error);
-  //     res.status(500).json({ message: "Internal Server Error" });
-  //   }
-  // };
 
   getDashboardDetails = async (req, res) => {
     if (req.user.role !== "Supervisor") {
@@ -167,134 +96,6 @@ class SupervisorController {
     }
   };
   
-  /**
-   * Get milk reports uploaded by vendors assigned to a supervisor, filtered by date range (inclusive).
-   * Query params:
-   *   - startDate: (optional) Filter from this date (YYYY-MM-DD)
-   *   - endDate: (optional) Filter up to this date (YYYY-MM-DD)
-   *   - page: (optional) Page number for pagination (default 1)
-   *   - limit: (optional) Results per page (default 10)
-   */
-  //  getMilkReports = async (req, res) => {
-  //   if (req.user.role !== "Supervisor") {
-  //     return res.status(403).json({
-  //       message: "Unauthorized: Only Supervisor can perform this action.",
-  //     });
-  //   }
-
-  //   try {
-  //     const { startDate, endDate, page = 1, limit = 10 } = req.query;
-  //     const pageNumber = parseInt(page) || 1;
-  //     const pageLimit = parseInt(limit) || 10;
-  //     const skip = (pageNumber - 1) * pageLimit;
-
-  //     // Find supervisor profile and get vendorIds
-  //     const supervisor = await UserModel.findById(req.user.id).select("supervisorRoutes");
-  //     if (
-  //       !supervisor ||
-  //       !Array.isArray(supervisor.supervisorRoutes) ||
-  //       supervisor.supervisorRoutes.length === 0
-  //     ) {
-  //       return res.status(400).json({
-  //         message: "Supervisor's route information not found.",
-  //       });
-  //     }
-
-  //     // Get vendorIds for supervisor routes
-  //     const vendorIds = await UserModel.find({
-  //       role: "Vendor",
-  //       route: { $in: supervisor.supervisorRoutes },
-  //     }).distinct("vendorId");
-
-  //     // Build milk report query: filter by vendors
-  //     const milkReportQuery = {
-  //       vlcUploaderCode: { $in: vendorIds },
-  //     };
-
-  //     // Date filter on docDate (instead of date)
-  //     let aggregationMatch = {
-  //       vlcUploaderCode: { $in: vendorIds },
-  //     };
-  //     if (startDate || endDate) {
-  //       milkReportQuery.docDate = {};
-  //       aggregationMatch.docDate = {};
-  //       if (startDate) {
-  //         milkReportQuery.docDate.$gte = new Date(startDate);
-  //         aggregationMatch.docDate.$gte = new Date(startDate);
-  //       }
-  //       if (endDate) {
-  //         // Set time to end of the day for inclusive filter
-  //         const end = new Date(endDate);
-  //         end.setHours(23, 59, 59, 999);
-  //         milkReportQuery.docDate.$lte = end;
-  //         aggregationMatch.docDate.$lte = end;
-  //       }
-  //       // Cleanup if not set
-  //       if (Object.keys(milkReportQuery.docDate).length === 0) delete milkReportQuery.docDate;
-  //       if (Object.keys(aggregationMatch.docDate).length === 0) delete aggregationMatch.docDate;
-  //     }
-
-  //     // // Query reports with pagination, sorted by docDate
-  //     // const milkReports = await MilkReportModel.find(milkReportQuery)
-  //     //   .sort({ docDate: -1 })
-  //     //   .skip(skip)
-  //     //   .limit(pageLimit);
-
-  //     const totalReports = await MilkReportModel.countDocuments(milkReportQuery);
-
-  //     // Get milkWeightSum for selected date range or all if none specified
-  //     const totalMilkWeight = await MilkReportModel.aggregate([
-  //       { $match: aggregationMatch },
-  //       { $group: { _id: null, total: { $sum: "$milkWeightLtr" } } },
-  //     ]);
-
-  //     const milkWeightSum = totalMilkWeight.length > 0 ? totalMilkWeight[0].total : 0;
-
-  //     res.status(200).json({
-  //       message: "Milk reports fetched successfully.",
-  //       milkWeightSum,
-  //       page: pageNumber,
-  //       limit: pageLimit,
-  //       total: totalReports,
-  //       totalPages: Math.ceil(totalReports / pageLimit),
-  //     });
-  //   } catch (error) {
-  //     console.error("Error fetching milk reports by date:", error);
-  //     res.status(500).json({ message: "Internal Server Error" });
-  //   }
-  // };
-
-  // getAllVendors = async (req, res) => {
-  //   if (req.user.role !== "Supervisor") {
-  //     return res.status(403).json({
-  //       message: "Unauthorized: Only Sub Admins can perform this action.",
-  //     });
-  //   }
-
-  //   try {
-  //     // Get the supervisor's route (assuming `route` is stored on user profile)
-  //     // Some systems may store route as "route", "routes", or as part of an object-- adjust if needed
-  //     const supervisor = await UserModel.findById(req.user.id).select("supervisorRoutes");
-  //     if (!supervisor || !Array.isArray(supervisor.supervisorRoutes) || supervisor.supervisorRoutes.length === 0) {
-  //       return res.status(400).json({
-  //         message: "Supervisor's route information not found.",
-  //       });
-  //     }
-  //     // Find all vendors whose route is in supervisor.supervisorRoutes (array of numbers)
-  //     const vendors = await UserModel.find({
-  //       route: { $in: supervisor.supervisorRoutes },
-  //       role: "Vendor",
-  //     }).select("-password -otp -otpExpires -__v"); // Exclude sensitive fields
-
-  //     res.status(200).json({
-  //       message: "Vendors fetched successfully.",
-  //       vendors,
-  //     });
-  //   } catch (error) {
-  //     console.error("Error fetching Vendors:", error);
-  //     res.status(500).json({ message: "Internal Server Error" });
-  //   }
-  // };
 
 
   getMilkReports = async (req, res) => {
@@ -390,20 +191,32 @@ class SupervisorController {
       return res.status(500).json({ message: "Internal Server Error" });
     }
   };
-
+  
   // getAllVendors = async (req, res) => {
   //   if (req.user.role !== "Supervisor") {
   //     return res.status(403).json({
-  //       message: "Unauthorized: Only Sub Admins can perform this action.",
+  //       message: "Unauthorized: Only Supervisors can perform this action.",
   //     });
   //   }
-  
+
   //   try {
-  //     const { page = 1, limit = 20 } = req.query;
-  
-  //     const supervisor = await UserModel.findById(req.user.id)
-  //       .select("supervisorRoutes");
-  
+  //     let { page = 1, limit, search = "" } = req.query;
+  //     page = Number(page);
+
+  //     // If limit is not set or falsy, show all data (do not paginate)
+  //     let usePagination = true;
+  //     if (!limit || isNaN(Number(limit))) {
+  //       usePagination = false;
+  //       limit = undefined;
+  //     } else {
+  //       limit = Number(limit);
+  //       if (limit <= 0) usePagination = false;
+  //     }
+  //     const skip = usePagination ? (page - 1) * limit : 0;
+
+  //     // Fetch supervisor for supervisorRoutes and onboardedBy
+  //     const supervisor = await UserModel.findById(req.user.id).select("supervisorRoutes onboardedBy");
+
   //     if (
   //       !supervisor ||
   //       !Array.isArray(supervisor.supervisorRoutes) ||
@@ -413,34 +226,107 @@ class SupervisorController {
   //         message: "Supervisor's route information not found.",
   //       });
   //     }
-  
-  //     const query = {
-  //       route: { $in: supervisor.supervisorRoutes },
+
+  //     // Make sure supervisor has onboardedBy
+  //     if (!supervisor.onboardedBy) {
+  //       return res.status(400).json({
+  //         message: "Supervisor's onboardedBy information not found.",
+  //       });
+  //     }
+
+  //     // Build search filter if needed
+  //     let searchFilter = {};
+  //     if (search && typeof search === "string" && search.trim() !== "") {
+  //       const regex = new RegExp(search.trim(), "i");
+  //       searchFilter = {
+  //         $or: [
+  //           { name: regex },
+  //           { email: regex },
+  //           { phoneNo: regex },
+  //           { vendorId: regex },
+  //           { "address.addressLine": regex },
+  //           { "address.city": regex },
+  //           { "address.state": regex },
+  //           { "address.pincode": regex },
+  //           // More fields as needed
+  //         ]
+  //       };
+  //     }
+
+  //     // Aggregation filter must also check vendors with same onboardedBy as supervisor
+  //     const matchFilter = {
   //       role: "Vendor",
+  //       route: { $in: supervisor.supervisorRoutes },
+  //       onboardedBy: supervisor.onboardedBy,
+  //       ...searchFilter,
   //     };
-  
-  //     const skip = (page - 1) * limit;
-  
-  //     // Count total vendors for pagination
-  //     const totalVendors = await UserModel.countDocuments(query);
-  
-  //     const vendors = await UserModel.find(query)
-  //       .select("-password -otp -otpExpires -__v")
-  //       .skip(skip)
-  //       .limit(Number(limit))
-  //       .sort({ createdAt: -1 });
-  
-  //     return res.status(200).json({
-  //       message: "Vendors fetched successfully.",
-  //       vendors,
-  //       pagination: {
-  //         page: Number(page),
-  //         limit: Number(limit),
-  //         total: totalVendors,
-  //         totalPages: Math.ceil(totalVendors / limit),
-  //       },
-  //     });
-  
+
+  //     let pipeline = [
+  //       {
+  //         $match: matchFilter,
+  //       }
+  //     ];
+
+  //     if (usePagination) {
+  //       pipeline.push({
+  //         $facet: {
+  //           metadata: [
+  //             { $count: "total" }
+  //           ],
+  //           data: [
+  //             { $sort: { createdAt: -1 } },
+  //             { $skip: skip },
+  //             { $limit: limit },
+  //             {
+  //               $project: {
+  //                 password: 0,
+  //                 otp: 0,
+  //                 otpExpires: 0,
+  //                 __v: 0
+  //               }
+  //             }
+  //           ]
+  //         }
+  //       });
+
+  //       const result = await UserModel.aggregate(pipeline);
+  //       const total = result?.[0]?.metadata?.[0]?.total || 0;
+  //       return res.status(200).json({
+  //         message: "Vendors fetched successfully.",
+  //         vendors: result?.[0]?.data || [],
+  //         pagination: {
+  //           page: page,
+  //           limit: limit,
+  //           total,
+  //           totalPages: Math.ceil(total / (limit || 1)),
+  //         },
+  //       });
+  //     } else {
+  //       // No pagination, get all
+  //       pipeline.push(
+  //         { $sort: { createdAt: -1 } },
+  //         {
+  //           $project: {
+  //             password: 0,
+  //             otp: 0,
+  //             otpExpires: 0,
+  //             __v: 0
+  //           }
+  //         }
+  //       );
+  //       const result = await UserModel.aggregate(pipeline);
+  //       return res.status(200).json({
+  //         message: "Vendors fetched successfully.",
+  //         vendors: result,
+  //         pagination: {
+  //           page: 1,
+  //           limit: result.length,
+  //           total: result.length,
+  //           totalPages: 1,
+  //         },
+  //       });
+  //     }
+
   //   } catch (error) {
   //     console.error("Error fetching Vendors:", error);
   //     return res.status(500).json({ message: "Internal Server Error" });
@@ -453,7 +339,7 @@ class SupervisorController {
         message: "Unauthorized: Only Supervisors can perform this action.",
       });
     }
-
+  
     try {
       let { page = 1, limit, search = "" } = req.query;
       page = Number(page);
@@ -522,6 +408,7 @@ class SupervisorController {
         }
       ];
 
+      // If pagination, facet the pipeline, else just aggregate all
       if (usePagination) {
         pipeline.push({
           $facet: {
@@ -546,9 +433,48 @@ class SupervisorController {
 
         const result = await UserModel.aggregate(pipeline);
         const total = result?.[0]?.metadata?.[0]?.total || 0;
+        const vendors = result?.[0]?.data || [];
+
+        // For each vendor, aggregate totalMilkQuantity, avgSNF, avgFAT (bulk from MilkReportModel)
+        if (vendors.length > 0) {
+          const vendorIds = vendors.map(v => v.vendorId).filter(Boolean);
+
+          // Query aggregation in MilkReportModel for all these vendorIds at once
+          const vendorAggregate = await MilkReportModel.aggregate([
+            { $match: { vlcUploaderCode: { $in: vendorIds } } },
+            {
+              $group: {
+                _id: "$vlcUploaderCode",
+                totalMilkQuantity: { $sum: "$milkWeightLtr" },
+                avgSNF: { $avg: "$snfPercentage" },
+                avgFAT: { $avg: "$fatPercentage" }
+              }
+            }
+          ]);
+
+          // Convert aggregation to quick-access map
+          const vendorStatsMap = {};
+
+          vendorAggregate.forEach(va => {
+            vendorStatsMap[va._id] = {
+              totalMilkQuantity: va.totalMilkQuantity || 0,
+              avgSNF: va.avgSNF || 0,
+              avgFAT: va.avgFAT || 0
+            };
+          });
+
+          // Merge stats into each vendor record
+          vendors.forEach(v => {
+            const stats = vendorStatsMap[v.vendorId] || {};
+            v.totalMilkQuantity = stats.totalMilkQuantity || 0;
+            v.avgSNF = stats.avgSNF || 0;
+            v.avgFAT = stats.avgFAT || 0;
+          });
+        }
+
         return res.status(200).json({
           message: "Vendors fetched successfully.",
-          vendors: result?.[0]?.data || [],
+          vendors,
           pagination: {
             page: page,
             limit: limit,
@@ -569,19 +495,54 @@ class SupervisorController {
             }
           }
         );
-        const result = await UserModel.aggregate(pipeline);
+        const vendors = await UserModel.aggregate(pipeline);
+
+        // For each vendor, aggregate totalMilkQuantity, avgSNF, avgFAT (bulk from MilkReportModel)
+        if (vendors.length > 0) {
+          const vendorIds = vendors.map(v => v.vendorId).filter(Boolean);
+
+          // Query aggregation in MilkReportModel for all these vendorIds at once
+          const vendorAggregate = await MilkReportModel.aggregate([
+            { $match: { vlcUploaderCode: { $in: vendorIds } } },
+            {
+              $group: {
+                _id: "$vlcUploaderCode",
+                totalMilkQuantity: { $sum: "$milkWeightLtr" },
+                avgSNF: { $avg: "$snfPercentage" },
+                avgFAT: { $avg: "$fatPercentage" }
+              }
+            }
+          ]);
+          // Convert aggregation to quick-access map
+          const vendorStatsMap = {};
+          vendorAggregate.forEach(va => {
+            vendorStatsMap[va._id] = {
+              totalMilkQuantity: va.totalMilkQuantity || 0,
+              avgSNF: va.avgSNF || 0,
+              avgFAT: va.avgFAT || 0
+            };
+          });
+
+          // Merge stats into each vendor record
+          vendors.forEach(v => {
+            const stats = vendorStatsMap[v.vendorId] || {};
+            v.totalMilkQuantity = stats.totalMilkQuantity || 0;
+            v.avgSNF = stats.avgSNF || 0;
+            v.avgFAT = stats.avgFAT || 0;
+          });
+        }
+
         return res.status(200).json({
           message: "Vendors fetched successfully.",
-          vendors: result,
+          vendors,
           pagination: {
             page: 1,
-            limit: result.length,
-            total: result.length,
+            limit: vendors.length,
+            total: vendors.length,
             totalPages: 1,
           },
         });
       }
-
     } catch (error) {
       console.error("Error fetching Vendors:", error);
       return res.status(500).json({ message: "Internal Server Error" });
