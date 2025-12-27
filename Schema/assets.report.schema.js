@@ -19,7 +19,7 @@ const assetsReportSchema = new mongoose.Schema(
     can: { type: Number, default: 0 },
     lid: { type: Number, default: 0 },
     pvc: { type: Number, default: 0 },
-    dps: { type: String, default: 0, unique: true },
+    dps: { type: String, default: 0, unique: true, sparse: true},
     keyboard: { type: Number, default: 0 },
     printer: { type: Number, default: 0 },
     charger: { type: Number, default: 0 },
@@ -29,7 +29,7 @@ const assetsReportSchema = new mongoose.Schema(
     ews: { type: Number, default: 0 },
     display: { type: Number, default: 0 },
     battery: { type: Number, default: 0 },
-    bond: { type: String, default: 0 },
+    bond: { type: String, default: 0, unique: true, sparse: true },
     vspSign: { type: Number, default: 0 },
     history: [
       {

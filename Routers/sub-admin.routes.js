@@ -169,6 +169,16 @@ subAdminRouter.post("/update-assets-report", jwtAuth, (req, res) => {
   subAdminController.updateAssetsReport(req, res);
 });
 
+subAdminRouter.post(
+  "/upload-assets-excel",
+  jwtAuth,
+  upload.single("file"),
+  (req, res) => {
+    subAdminController.uploadAssetsExcel(req, res);
+  }
+);
+
+
 subAdminRouter.get("/get-assets-report", jwtAuth, (req, res) => {
   subAdminController.getAssetsReport(req, res);
 });

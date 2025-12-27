@@ -3406,6 +3406,539 @@ class SubAdminController {
     }
   };
 
+
+  /**
+   * Upload Assets Excel Sheet & manage Used Assets mappings.
+   * Accepts an Excel file with assets columns as per provided field list
+   * Also updates UsedAssetsOfSubAdminModel with newly used DPS and BOND values.
+   * Endpoint: POST /api/sub-admin/upload-assets-excel
+   * FormData: { file }
+   */
+  uploadAssetsExcel = async (req, res) => {
+    console.log('Check: Entered uploadAssetsExcel');
+
+    if (!req.user || !req.user.id || req.user.role !== "SubAdmin") {
+      console.log('Check: Unauthorized user or missing user info:', req.user);
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const file = req.file;
+    if (!file) {
+      console.log('Check: No file uploaded with request');
+      return res.status(400).json({ message: "Excel file is required" });
+    }
+
+    console.log('Check: Excel file received:', req.file.path);
+
+    const workbook = xlsx.readFile(req.file.path);
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+
+    const jsonRaw = xlsx.utils.sheet_to_json(sheet, { defval: "" });
+    console.log('Check: Number of rows in Excel:', jsonRaw.length);
+
+    const parseCommaValues = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val.map((v) => v.trim()).filter(Boolean);
+      return val
+        .toString()
+        .split(",")
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0);
+    };
+
+    // Keep "duplicate" in numericFields for reference, but treat it specially in updates below
+    const numericFields = [
+      "rt", "duplicate", "can", "lid", "pvc",
+      "keyboard", "printer", "charger", "stripper",
+      "solar", "controller", "ews", "display", "battery"
+    ];
+
+    let inserted = 0, updated = 0;
+    const failedRows = [];
+    const currentTime = new Date();
+    const subAdminId = req.user.id;
+    let session;
+
+    try {
+      session = await AssetsReportModel.startSession();
+      session.startTransaction();
+      console.log('Check: Started MongoDB transaction');
+
+      // Pull issued/used at transaction start
+      let usedAssetsForUser = await UsedAssetsOfSubAdminModel.findOne({ subAdminId }).session(session);
+      let issuedAssetsForUser = await IssuedAssetsToSubAdminModel.findOne({ subAdminId }).session(session);
+
+      console.log('Check: usedAssetsForUser:', !!usedAssetsForUser, 'issuedAssetsForUser:', !!issuedAssetsForUser);
+
+      if (!issuedAssetsForUser) {
+        if (session) {
+          try { await session.abortTransaction(); } catch (e) {}
+          session.endSession();
+        }
+        return res.status(400).json({
+          message: "No issued assets found for this sub-admin.",
+          detailedErrors: [{ error: "No issued assets found for this sub-admin." }]
+        });
+      }
+
+      // === 1. Calculate aggregate for every numeric field ===
+      let totalRequested = {};
+      numericFields.forEach(field => { totalRequested[field] = 0; });
+
+      // Collect row breakdown per numeric field for extra error reporting
+      let rowBreakdown = {};
+      numericFields.forEach(field => { rowBreakdown[field] = []; });
+
+      for (let i = 0; i < jsonRaw.length; i++) {
+        const row = jsonRaw[i];
+        const norm = s => (s || "").toString().trim();
+        const getCol = (obj, ...variants) => {
+          for (let v of variants) if (v in obj) return obj[v];
+          return "";
+        };
+        numericFields.forEach(field => {
+          // Try various header case variants
+          let variants = [field, field.toUpperCase(), field.toLowerCase(), field.charAt(0).toUpperCase() + field.slice(1)];
+          let rawVal = 0;
+          for (let v of variants) {
+            if (Object.hasOwn(row, v) && row[v] !== undefined && row[v] !== "") {
+              rawVal = Number(norm(row[v]));
+              break;
+            }
+          }
+          if (isNaN(rawVal)) rawVal = 0;
+          totalRequested[field] += rawVal;
+          // For breakdown: record only nonzero
+          if (rawVal !== 0) {
+            rowBreakdown[field].push({
+              row: i + 2,
+              value: rawVal
+            });
+          }
+        });
+      }
+
+      // Used assets so far for this sub-admin (to avoid exceeding issued)
+      let usedAssets = {};
+      numericFields.forEach(field => { usedAssets[field] = usedAssetsForUser && usedAssetsForUser[field] ? Number(usedAssetsForUser[field]) : 0; });
+
+      // Issued assets map
+      let issuedAssets = {};
+      numericFields.forEach(field => { issuedAssets[field] = issuedAssetsForUser[field] ? Number(issuedAssetsForUser[field]) : 0; });
+
+      // === 2. Compare sum to inventory, error details ===
+      let notEnough = [];
+      numericFields.forEach(field => {
+        const available = issuedAssets[field] - usedAssets[field];
+        if (totalRequested[field] > available) {
+          notEnough.push({
+            asset: field.toUpperCase(),
+            requestedTotal: totalRequested[field],
+            available,
+            detailedErrors: [
+              {
+                error: `Asset "${field.toUpperCase()}" asked ${totalRequested[field]} / remain ${field.toUpperCase()} available ${available} only`,
+                field: field,
+                asked: totalRequested[field],
+                available
+              }
+            ],
+            perRowDetails: rowBreakdown[field]
+          });
+        }
+      });
+
+      if (notEnough.length > 0) {
+        if (session) {
+          try { await session.abortTransaction(); } catch (e) {}
+          session.endSession();
+        }
+        // DetailedErrors: each notEnough entry already contains detailedErrors for this asset
+        return res.status(400).json({
+          message: "Excel upload failed due to exceeding inventory for one or more asset types.",
+          numberDetails: notEnough,
+          detailedErrors: notEnough.flatMap(e => e.detailedErrors)
+        });
+      }
+
+      // === 3. Continue to normal row and DPS/BOND logic ===
+
+      let unionDps = usedAssetsForUser && usedAssetsForUser.dps ? parseCommaValues(usedAssetsForUser.dps) : [];
+      let unionBond = usedAssetsForUser && usedAssetsForUser.bond ? parseCommaValues(usedAssetsForUser.bond) : [];
+      let usedAssetsDraft = usedAssetsForUser
+        ? JSON.parse(JSON.stringify(usedAssetsForUser.toObject()))
+        : {
+            subAdminId,
+            dps: "",
+            bond: "",
+            history: []
+          };
+
+      for (const field of numericFields) {
+        if (!(field in usedAssetsDraft)) usedAssetsDraft[field] = 0;
+      }
+      usedAssetsDraft.dps = Array.isArray(unionDps) ? unionDps.join(',') : (usedAssetsDraft.dps || "");
+      usedAssetsDraft.bond = Array.isArray(unionBond) ? unionBond.join(',') : (usedAssetsDraft.bond || "");
+
+      // For checking DPS/Bond conflicts *within* the batch, keep a Set of vlcCode -> list of DPS/BOND
+      const batchDpsMap = {};
+      const batchBondMap = {};
+
+      let hasCriticalRowError = false;
+
+      for (let i = 0; i < jsonRaw.length; i++) {
+        const row = jsonRaw[i];
+        const norm = s => (s || "").toString().trim();
+        const getCol = (obj, ...variants) => {
+          for (let v of variants) if (v in obj) return obj[v];
+          return "";
+        };
+        const srNo = norm(getCol(row, "S.no", "S.No.", "S.NO", "s.no", "s.no."));
+        const stockNo = norm(getCol(row, "STOCK NO.", "Stock No.", "StockNo", "stock no.", "stockNo"));
+        const rt = Number(norm(getCol(row, "RT", "Rt", "rt")));
+        const duplicate = Number(norm(getCol(row, "DUPLICATE", "Duplicate", "duplicate")));
+        const vlcName = norm(getCol(row, "VLC NAME", "VLC Name", "vlc name", "vlcName"));
+        const status = norm(getCol(row, "status", "Status"));
+        const cStatus = norm(getCol(row, "C STATUS", "C Status", "c status", "cStatus"));
+        const vlcCode = norm(getCol(row, "VLC Code", "vlc code", "vlcCode", "VLC CODE"));
+        const can = Number(norm(getCol(row, "CAN", "Can", "can")));
+        const lid = Number(norm(getCol(row, "LID", "Lid", "lid")));
+        const pvc = Number(norm(getCol(row, "PVC", "Pvc", "pvc")));
+        const dps = norm(getCol(row, "DPS", "Dps", "dps"));
+        const keyboard = Number(norm(getCol(row, "Keyboard", "keyboard", "KEYBOARD")));
+        const printer = Number(norm(getCol(row, "PRINTER", "Printer", "printer")));
+        const charger = Number(norm(getCol(row, "Charger", "CHARGER", "charger")));
+        const stripper = Number(norm(getCol(row, "STIRRER", "Stirrer", "STRIPPER", "stripper")));
+        const solar = Number(norm(getCol(row, "SOLAR", "Solar", "solar")));
+        const controller = Number(norm(getCol(row, "Controller", "Controler", "controller", "CONTROLER")));
+        const ews = Number(norm(getCol(row, "EWS", "ews", "Ews")));
+        const display = Number(norm(getCol(row, "Display", "display", "DISPLAY")));
+        const battery = Number(norm(getCol(row, "BATTERY", "Battery", "battery")));
+        const bond = norm(getCol(row, "BOND", "Bond", "bond"));
+        const vspSignStr = norm(getCol(row, "YES /NO", "YES/NO", "Yes/No", "yes/no"));
+        let vspSign = 0;
+        if (vspSignStr.toLowerCase() === "yes") vspSign = 1;
+        if (vspSignStr.toLowerCase() === "no") vspSign = 0;
+
+        const rowData = {
+          uploadedOn: currentTime,
+          uploadedBy: req.user.id,
+          vlcCode,
+          srNo,
+          stockNo,
+          rt: isNaN(rt) ? 0 : rt,
+          duplicate: isNaN(duplicate) ? 0 : duplicate,
+          vlcName,
+          status,
+          cStatus,
+          can: isNaN(can) ? 0 : can,
+          lid: isNaN(lid) ? 0 : lid,
+          pvc: isNaN(pvc) ? 0 : pvc,
+          dps,
+          keyboard: isNaN(keyboard) ? 0 : keyboard,
+          printer: isNaN(printer) ? 0 : printer,
+          charger: isNaN(charger) ? 0 : charger,
+          stripper: isNaN(stripper) ? 0 : stripper,
+          solar: isNaN(solar) ? 0 : solar,
+          controller: isNaN(controller) ? 0 : controller,
+          ews: isNaN(ews) ? 0 : ews,
+          display: isNaN(display) ? 0 : display,
+          battery: isNaN(battery) ? 0 : battery,
+          bond,
+          vspSign,
+        };
+
+        let rowError = { row: i+2, vlcCode: vlcCode || null, details: [] };
+        let rowHasError = false;
+
+        if (!vlcCode) {
+          rowError.details.push({ error: "Missing VLC Code" });
+          rowHasError = true;
+        }
+
+        const dpsValues = parseCommaValues(dps);
+        const bondValues = parseCommaValues(bond);
+
+        let issuedDpsList = parseCommaValues(issuedAssetsForUser && issuedAssetsForUser.dps);
+        let issuedBondList = parseCommaValues(issuedAssetsForUser && issuedAssetsForUser.bond);
+
+        // DPS checks
+        if (dpsValues.length > 0) {
+          const missingDps = dpsValues.filter((val) => !issuedDpsList.includes(val));
+          if (missingDps.length > 0) {
+            rowError.details.push({
+              error: "Not issued DPS",
+              missingDps,
+              details: `DPS asked: ${dpsValues.join(", ")} / only available DPS: ${issuedDpsList.join(", ")}`
+            });
+            rowHasError = true;
+          }
+          // Batch-level conflict
+          for (const d of dpsValues) {
+            if (
+              Object.entries(batchDpsMap).find(
+                ([otherVlc, arr]) => otherVlc !== vlcCode && arr.includes(d)
+              )
+            ) {
+              let conflictVlc = Object.entries(batchDpsMap).find(
+                ([otherVlc, arr]) => otherVlc !== vlcCode && arr.includes(d)
+              );
+              rowError.details.push({
+                error: "DPS value already used in another record in same batch (Excel)",
+                value: d,
+                conflictWith: conflictVlc ? conflictVlc[0] : null
+              });
+              rowHasError = true;
+            }
+          }
+          // Cross-model conflict
+          const conflictAsset = await AssetsReportModel.findOne({
+            dps: { $exists: true, $ne: "" },
+            vlcCode: { $ne: vlcCode },
+            dps: { $in: dpsValues }
+          }).session(session);
+          if (conflictAsset) {
+            let assetDps = parseCommaValues(conflictAsset.dps);
+            let found = dpsValues.find((d) => assetDps.includes(d));
+            if (found) {
+              rowError.details.push({
+                error: "DPS value already used in another VLC record",
+                value: found,
+                conflictWith: conflictAsset.vlcCode
+              });
+              rowHasError = true;
+            }
+          }
+        }
+
+        // Bond checks
+        if (bondValues.length > 0) {
+          const missingBonds = bondValues.filter((val) => !issuedBondList.includes(val));
+          if (missingBonds.length > 0) {
+            rowError.details.push({
+              error: "Not issued Bond",
+              missingBonds,
+              details: `Bond asked: ${bondValues.join(", ")} / only available Bond: ${issuedBondList.join(", ")}`
+            });
+            rowHasError = true;
+          }
+          // Batch-level conflict
+          for (const b of bondValues) {
+            if (
+              Object.entries(batchBondMap).find(
+                ([otherVlc, arr]) => otherVlc !== vlcCode && arr.includes(b)
+              )
+            ) {
+              let conflictVlc = Object.entries(batchBondMap).find(
+                ([otherVlc, arr]) => otherVlc !== vlcCode && arr.includes(b)
+              );
+              rowError.details.push({
+                error: "Bond value already used in another record in same batch (Excel)",
+                value: b,
+                conflictWith: conflictVlc ? conflictVlc[0] : null
+              });
+              rowHasError = true;
+            }
+          }
+          // Cross-model conflict
+          const conflictAsset = await AssetsReportModel.findOne({
+            bond: { $exists: true, $ne: "" },
+            vlcCode: { $ne: vlcCode },
+            bond: { $in: bondValues }
+          }).session(session);
+          if (conflictAsset) {
+            let assetBond = parseCommaValues(conflictAsset.bond);
+            let found = bondValues.find((b) => assetBond.includes(b));
+            if (found) {
+              rowError.details.push({
+                error: "Bond value already used in another VLC record",
+                value: found,
+                conflictWith: conflictAsset.vlcCode
+              });
+              rowHasError = true;
+            }
+          }
+        }
+
+        if (rowHasError) {
+          failedRows.push(rowError);
+          hasCriticalRowError = true;
+          continue;
+        }
+
+        let usedAssetsRec = usedAssetsDraft;
+        // Find dataExists before, as we'll need to check prev DPS/BOND to remove from used assets if changed
+        const dataExists = await AssetsReportModel.findOne({ vlcCode }).session(session);
+
+        if (!dataExists) {
+          try {
+            const newAsset = new AssetsReportModel({ ...rowData, history: [] });
+            await newAsset.save({ session });
+            inserted++;
+            numericFields.forEach(f => {
+              // UPDATE: For duplicate field, only add to usedAssetsDraft if asset is new
+              usedAssetsDraft[f] = Number(usedAssetsDraft[f] || 0) + Number(rowData[f] || 0);
+            });
+            if (dpsValues.length > 0)
+              unionDps = Array.from(new Set([...unionDps, ...dpsValues]));
+            if (bondValues.length > 0)
+              unionBond = Array.from(new Set([...unionBond, ...bondValues]));
+            if (dpsValues.length > 0)
+              batchDpsMap[vlcCode] = dpsValues.slice();
+            if (bondValues.length > 0)
+              batchBondMap[vlcCode] = bondValues.slice();
+          } catch (err) {
+            failedRows.push({ row: i + 2, vlcCode, details: [{ error: err.message }] });
+            hasCriticalRowError = true;
+            continue;
+          }
+        } else {
+          try {
+            // New logic for removing previous DPS/BOND values no longer in new set from USED assets too
+            let prevDpsValues = parseCommaValues(dataExists.dps);
+            let prevBondValues = parseCommaValues(dataExists.bond);
+
+            // For DPS: remove old ones that are not present in the new set
+            let removedDps = prevDpsValues.filter(d => !dpsValues.includes(d));
+            if (removedDps.length > 0) {
+              // Remove from unionDps/usedAssetsDraft.dps
+              unionDps = unionDps.filter(d => !removedDps.includes(d));
+            }
+            // For BOND: remove old ones that are not present in the new set
+            let removedBond = prevBondValues.filter(b => !bondValues.includes(b));
+            if (removedBond.length > 0) {
+              // Remove from unionBond/usedAssetsDraft.bond
+              unionBond = unionBond.filter(b => !removedBond.includes(b));
+            }
+
+            dataExists.history = dataExists.history || [];
+            dataExists.history.push({
+              srNo: dataExists.srNo,
+              stockNo: dataExists.stockNo,
+              rt: dataExists.rt,
+              duplicate: dataExists.duplicate,
+              vlcName: dataExists.vlcName,
+              status: dataExists.status,
+              cStatus: dataExists.cStatus,
+              can: dataExists.can,
+              lid: dataExists.lid,
+              pvc: dataExists.pvc,
+              dps: dataExists.dps,
+              keyboard: dataExists.keyboard,
+              printer: dataExists.printer,
+              charger: dataExists.charger,
+              stripper: dataExists.stripper,
+              solar: dataExists.solar,
+              controller: dataExists.controller,
+              ews: dataExists.ews,
+              display: dataExists.display,
+              battery: dataExists.battery,
+              bond: dataExists.bond,
+              vspSign: dataExists.vspSign,
+              changedOn: currentTime,
+            });
+
+            Object.keys(rowData).forEach((f) => {
+              if (f !== "uploadedOn" && f !== "uploadedBy" && rowData[f] !== undefined) {
+                dataExists[f] = rowData[f];
+              }
+            });
+            await dataExists.save({ session });
+            updated++;
+
+            numericFields.forEach(f => {
+              // Special handling for "duplicate": Do NOT add again if record exists, just keep old usedAssetsDraft. 
+              // Only update "duplicate" if it increases, not add again and again
+              if (f === "duplicate") {
+                // Calculate what the previous value was, so usedAssetsDraft should only be increased if higher, or remain as is if lower or same
+                let prevValue = Number(dataExists.history[dataExists.history.length - 1][f] || 0);
+                let newValue = Number(rowData[f] ?? prevValue);
+                // We do not add diff as with other fields, but rather keep max between existing usedAssetsDraft and newValue
+                usedAssetsDraft[f] = Math.max(Number(usedAssetsDraft[f] || 0), newValue);
+              } else {
+                const oldVal = Number(dataExists.history[dataExists.history.length - 1][f] || 0);
+                const newVal = Number(rowData[f] ?? oldVal);
+                const diff = newVal - oldVal;
+                usedAssetsDraft[f] = Number(usedAssetsDraft[f] || 0) + diff;
+                usedAssetsDraft[f] = Math.max(0, usedAssetsDraft[f]);
+              }
+            });
+
+            if (dpsValues.length > 0)
+              unionDps = Array.from(new Set([...unionDps, ...dpsValues]));
+            if (bondValues.length > 0)
+              unionBond = Array.from(new Set([...unionBond, ...bondValues]));
+            if (dpsValues.length > 0)
+              batchDpsMap[vlcCode] = dpsValues.slice();
+            if (bondValues.length > 0)
+              batchBondMap[vlcCode] = bondValues.slice();
+          } catch (err) {
+            failedRows.push({ row: i + 2, vlcCode, details: [{ error: err.message }] });
+            hasCriticalRowError = true;
+            continue;
+          }
+        }
+      }
+
+      if (hasCriticalRowError) {
+        if (session) {
+          try { await session.abortTransaction(); } catch (e) {}
+          session.endSession();
+        }
+        return res.status(400).json({
+          message: "Excel upload failed due to row(s) with errors.",
+          detailedErrors: failedRows,
+        });
+      }
+
+      if (inserted + updated > 0) {
+        let usedAssetsO = await UsedAssetsOfSubAdminModel.findOne({ subAdminId }).session(session);
+        if (!usedAssetsO) {
+          usedAssetsO = new UsedAssetsOfSubAdminModel({
+            subAdminId,
+            dps: Array.from(new Set(unionDps)).join(','),
+            bond: Array.from(new Set(unionBond)).join(','),
+            history: [{ changedOn: new Date() }]
+          });
+        } else {
+          usedAssetsO.dps = Array.from(new Set(unionDps)).join(',');
+          usedAssetsO.bond = Array.from(new Set(unionBond)).join(',');
+          usedAssetsO.history.push({ changedOn: new Date() });
+        }
+
+        // Handle duplicate field correctly in usedAssetsO
+        numericFields.forEach(f => {
+          if (f === "duplicate") {
+            // For duplicate: UsedAssets should NOT be incremented, only set to max(usedAssetsDraft.duplicate, usedAssetsO.duplicate)
+            usedAssetsO[f] = Math.max(Number(usedAssetsDraft[f] || 0), Number(usedAssetsO[f] || 0));
+          } else {
+            usedAssetsO[f] = usedAssetsDraft[f] || 0;
+          }
+        });
+        await usedAssetsO.save({ session });
+      }
+
+      await session.commitTransaction();
+      session.endSession();
+
+      return res.status(200).json({
+        message: `Assets Excel upload finished.`,
+        inserted, updated,
+        detailedErrors: failedRows
+      });
+
+    } catch (error) {
+      if (session) {
+        try { await session.abortTransaction(); } catch(e){}
+        session.endSession();
+      }
+      console.error("Error in uploadAssetsExcel transaction:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  };
+
+
   getAssetsReport = async (req, res) => {
     try {
       const { page = 1, limit = 10 } = req.query;

@@ -41,7 +41,7 @@ const jwtAuth = async (req, res, next) => {
       payload.role != "Admin" &&
       payload.role != "Supervisor"
     ) {
-      console.log(payload.role);
+      // console.log(payload.role);
       return res
         .status(401)
         .json({ error: "Unauthorized: Invalid user role." });
@@ -51,7 +51,7 @@ const jwtAuth = async (req, res, next) => {
       _id: payload.id,
       role: payload.role,
     });
-console.log(dbUser);
+// console.log(dbUser);
     // If no user is found in the database with the given ID
     if (!dbUser) {
       return res
