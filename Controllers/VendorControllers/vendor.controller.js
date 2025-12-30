@@ -235,6 +235,25 @@ class VendorController {
           String(report.snfPercentage).includes(searchString)
         );
       }
+
+      // Sort so that within each docDate, "Morning" comes before "Evening"
+      milkReports.sort((a, b) => {
+        // Parse date strings back to Date (format: "DD-MM-YYYY")
+        const toDateObj = (dateStr) => {
+          const [d, m, y] = dateStr.split("-");
+          return new Date(`${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`);
+        };
+        const dateA = toDateObj(a.docDate);
+        const dateB = toDateObj(b.docDate);
+        // First: Sort by date descending (latest first)
+        if (dateA > dateB) return -1;
+        if (dateA < dateB) return 1;
+        // Second: On same date, "Morning" before "Evening"
+        const shifts = { morning: 0, evening: 1 };
+        const shiftA = a.shift?.toLowerCase() || "";
+        const shiftB = b.shift?.toLowerCase() || "";
+        return (shifts[shiftA] ?? 2) - (shifts[shiftB] ?? 2);
+      });
   
       return res.status(200).json({
         success: true,

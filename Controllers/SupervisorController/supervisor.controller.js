@@ -41,60 +41,64 @@ class SupervisorController {
         message: "Unauthorized: Only Supervisor can perform this action.",
       });
     }
-  
+
     try {
       // 1. Fetch supervisor profile first
       const supervisor = await UserModel.findById(req.user.id)
         .select("-password -otp -otpExpires -__v")
         .lean();
-  
-      const routes = supervisor?.supervisorRoutes;
-  
-      if (!routes || routes.length === 0) {
+
+      const supervisorRoutes = supervisor?.supervisorRoutes;
+
+      if (!supervisorRoutes || supervisorRoutes.length === 0) {
         return res.status(400).json({
           message: "Supervisor's route information not found.",
         });
       }
-  
-      // 2. Get vendorIds first, then use for other queries to avoid using before initialization
-      // Fetch vendor IDs (first)
-      const vendorIds = await UserModel.find({
-        role: "Vendor",
-        route: { $in: routes },
-      })
-        .distinct("vendorId")
-        .lean();
 
-      // Run counts and aggregations in parallel (after vendorIds is available)
-      const [allVendorsCount, milkAggregation] = await Promise.all([
-        // Count vendors
-        UserModel.countDocuments({
-          role: "Vendor",
-          route: { $in: routes },
-        }),
-        // Aggregate milk in parallel
-        MilkReportModel.aggregate([
-          { $match: { vlcUploaderCode: { $in: vendorIds || [] } } },
+      if (!supervisor || !supervisor.onboardedBy) {
+        return res.status(400).json({
+          message: "Supervisor's onboardedBy information not found.",
+        });
+      }
+
+      // Find vendors who:
+      // 1. Are onboarded by the same subadmin who onboarded this supervisor
+      // 2. Have at least one route included in supervisorRoutes
+      const vendors = await UserModel.find({
+        role: "Vendor",
+        onboardedBy: supervisor.onboardedBy,
+        route: { $in: supervisorRoutes }
+      }).select("vendorId route").lean();
+
+      const vendorIds = vendors.map(v => v.vendorId).filter(Boolean);
+
+      // Count only those vendors that satisfied both above conditions
+      const allVendorsCount = vendors.length;
+
+      // Aggregate total milk for these vendors only
+      let milkWeightSum = 0;
+      if (vendorIds.length > 0) {
+        const milkAggregation = await MilkReportModel.aggregate([
+          { $match: { vlcUploaderCode: { $in: vendorIds } } },
           { $group: { _id: null, total: { $sum: "$milkWeightLtr" } } },
-        ]),
-      ]);
-    
-  
-      const milkWeightSum =
-        milkAggregation?.length ? milkAggregation[0].total : 0;
-  
+        ]);
+        milkWeightSum = milkAggregation.length ? milkAggregation[0].total : 0;
+      }
+
       return res.status(200).json({
         message: "Dashboard details fetched successfully.",
         allVendorsCount,
         milkWeightSum,
         supervisorProfile: supervisor,
-        supervisorRoutes: routes,
+        supervisorRoutes: supervisorRoutes,
       });
     } catch (error) {
       console.error("Error fetching dashboard details:", error);
       return res.status(500).json({ message: "Internal Server Error" });
     }
   };
+
   
 
 
@@ -565,7 +569,7 @@ class SupervisorController {
       }
 
       const { vendorId } = req.params;
-      const { startDate, endDate } = req.query;
+      const { startDate, endDate, startingDate, endingDate } = req.query;
 
       if (!vendorId) {
         return res.status(400).json({ message: "vendorId is required" });
@@ -583,26 +587,85 @@ class SupervisorController {
         return res.status(404).json({ message: "Vendor not found" });
       }
 
-      // Build date filter only once
-      const dateFilter = {};
-      if (startDate || endDate) {
-        dateFilter.docDate = {};
-        if (startDate) dateFilter.docDate.$gte = new Date(startDate);
-
-        if (endDate) {
-          const end = new Date(endDate);
-          end.setHours(23, 59, 59, 999);
-          dateFilter.docDate.$lte = end;
-        }
+      // Handle startingDate and endingDate with required logic
+      let sDate, eDate;
+      // Prefer startingDate/endingDate if provided, else fall back to startDate/endDate.
+      if (startingDate || endingDate) {
+        // Set defaults for start/end when only one present
+        sDate = startingDate ? new Date(startingDate) : undefined;
+        eDate = endingDate ? new Date(endingDate) : undefined;
+      } else if (startDate || endDate) {
+        sDate = startDate ? new Date(startDate) : undefined;
+        eDate = endDate ? new Date(endDate) : undefined;
       }
 
-      // No search filters applied
+      // If both are undefined, set eDate as today, sDate as today-9 (10 days)
+      if (!sDate && !eDate) {
+        eDate = new Date();
+        eDate.setHours(23, 59, 59, 999);
+        sDate = new Date(eDate);
+        sDate.setDate(eDate.getDate() - 9);
+        sDate.setHours(0, 0, 0, 0);
+      } else if (sDate && !eDate) {
+        // Only start given: set end as start + 9
+        eDate = new Date(sDate);
+        eDate.setDate(sDate.getDate() + 9);
+        eDate.setHours(23, 59, 59, 999);
+        sDate.setHours(0, 0, 0, 0);
+      } else if (!sDate && eDate) {
+        // Only end given: set start as end - 9
+        sDate = new Date(eDate);
+        sDate.setDate(eDate.getDate() - 9);
+        sDate.setHours(0, 0, 0, 0);
+        eDate.setHours(23, 59, 59, 999);
+      } else {
+        // both present
+        sDate.setHours(0, 0, 0, 0);
+        eDate.setHours(23, 59, 59, 999);
+      }
 
-      // Run queries in parallel with descending order for latest on top
+      // Enforce max 10 day difference (inclusive)
+      const daysDiff = Math.floor((eDate - sDate) / (1000 * 60 * 60 * 24));
+      if (daysDiff > 9) {
+        // shrink to last 10 days window
+        sDate = new Date(eDate);
+        sDate.setDate(eDate.getDate() - 9);
+        sDate.setHours(0, 0, 0, 0);
+      }
+
+      // For the rest, also provide original startDate/endDate for compatibility in output
+      const queryDateFilter = {
+        docDate: {
+          $gte: sDate,
+          $lte: eDate
+        }
+      };
+
+      // Milk stats (all selected date range)
+      const vendorStats = await MilkReportModel.aggregate([
+        { $match: { vlcUploaderCode: vendorId, ...queryDateFilter } },
+        {
+          $group: {
+            _id: "$vlcUploaderCode",
+            totalMilkQuantity: { $sum: "$milkWeightLtr" },
+            avgSNF: { $avg: "$snfPercentage" },
+            avgFAT: { $avg: "$fatPercentage" },
+          }
+        }
+      ]);
+
+      let totalMilkQuantity = 0, avgSNF = 0, avgFAT = 0;
+      if (vendorStats.length > 0) {
+        totalMilkQuantity = vendorStats[0].totalMilkQuantity || 0;
+        avgSNF = vendorStats[0].avgSNF || 0;
+        avgFAT = vendorStats[0].avgFAT || 0;
+      }
+
+      // Find sales/assets in this date window (for milk: same range)
       const [milkRaw, salesRaw, assetsRaw] = await Promise.all([
         MilkReportModel.find({
           vlcUploaderCode: vendorId,
-          ...dateFilter,
+          ...queryDateFilter,
         })
           .select(
             "docDate shift vlcUploaderCode vlcName milkWeightLtr fatPercentage snfPercentage edited history uploadedOn"
@@ -612,7 +675,7 @@ class SupervisorController {
 
         SalesReportModel.find({
           vlcUploaderCode: vendorId,
-          ...dateFilter,
+          ...queryDateFilter,
         })
           .select(
             "docDate vlcUploaderCode itemCode itemName quantity edited history uploadedOn"
@@ -630,7 +693,30 @@ class SupervisorController {
           .lean(),
       ]);
 
-      // Format data efficiently
+      // Build per-date, per-shift milk quantity
+      const perDateMilk = {};
+      // days in [sDate, eDate]
+      for (let i = 0; i <= 9; ++i) {
+        const d = new Date(sDate);
+        d.setDate(sDate.getDate() + i);
+        if (d > eDate) break;
+        const f = formatDate(d);
+        perDateMilk[f] = { date: f, MORNING: 0, EVENING: 0 };
+      }
+      for (const r of milkRaw) {
+        const fDate = formatDate(r.docDate);
+        if (!perDateMilk[fDate]) continue; // out of selected range
+        const shift = r.shift ? r.shift.toUpperCase() : "";
+        if (shift === "MORNING") {
+          perDateMilk[fDate].MORNING += r.milkWeightLtr || 0;
+        } else if (shift === "EVENING") {
+          perDateMilk[fDate].EVENING += r.milkWeightLtr || 0;
+        }
+      }
+      // Construct array for API output
+      const eachDayStats = Object.values(perDateMilk);
+
+      // Format main milk, sales, assets data
       const milkReports = milkRaw.map((r) => ({
         "DOC DATE": formatDate(r.docDate),
         SHIFT: r.shift || "",
@@ -726,6 +812,14 @@ class SupervisorController {
         milkReports,
         salesReports,
         assetsReports,
+        totalMilkQuantity,
+        avgSNF,
+        avgFAT,
+        dateRange: {
+          startingDate: formatDate(sDate),
+          endingDate: formatDate(eDate),
+        },
+        eachDayMilkStats: eachDayStats // [{ date, MORNING, EVENING }]
       });
     } catch (error) {
       console.error("Error in getVendorReportsByVendorId:", error);
