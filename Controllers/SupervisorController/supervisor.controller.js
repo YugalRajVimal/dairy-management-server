@@ -569,7 +569,7 @@ class SupervisorController {
       }
 
       const { vendorId } = req.params;
-      const { startDate, endDate, startingDate, endingDate } = req.query;
+      const { startDate, endDate } = req.query;
 
       if (!vendorId) {
         return res.status(400).json({ message: "vendorId is required" });
@@ -587,72 +587,98 @@ class SupervisorController {
         return res.status(404).json({ message: "Vendor not found" });
       }
 
-      // Handle startingDate and endingDate with required logic
+      let useDateFilter = false;
       let sDate, eDate;
-      // Prefer startingDate/endingDate if provided, else fall back to startDate/endDate.
-      if (startingDate || endingDate) {
-        // Set defaults for start/end when only one present
-        sDate = startingDate ? new Date(startingDate) : undefined;
-        eDate = endingDate ? new Date(endingDate) : undefined;
-      } else if (startDate || endDate) {
-        sDate = startDate ? new Date(startDate) : undefined;
-        eDate = endDate ? new Date(endDate) : undefined;
-      }
+      let rangeStart, rangeEnd;
 
-      // If both are undefined, set eDate as today, sDate as today-9 (10 days)
-      if (!sDate && !eDate) {
-        eDate = new Date();
-        eDate.setHours(23, 59, 59, 999);
-        sDate = new Date(eDate);
-        sDate.setDate(eDate.getDate() - 9);
-        sDate.setHours(0, 0, 0, 0);
-      } else if (sDate && !eDate) {
-        // Only start given: set end as start + 9
-        eDate = new Date(sDate);
-        eDate.setDate(sDate.getDate() + 9);
-        eDate.setHours(23, 59, 59, 999);
-        sDate.setHours(0, 0, 0, 0);
-      } else if (!sDate && eDate) {
-        // Only end given: set start as end - 9
-        sDate = new Date(eDate);
-        sDate.setDate(eDate.getDate() - 9);
-        sDate.setHours(0, 0, 0, 0);
-        eDate.setHours(23, 59, 59, 999);
+      if (startDate || endDate) {
+        useDateFilter = true;
+        if (startDate) {
+          sDate = new Date(startDate);
+          sDate.setHours(0, 0, 0, 0);
+        }
+        if (endDate) {
+          eDate = new Date(endDate);
+          eDate.setHours(23, 59, 59, 999);
+        }
+        if (sDate && !eDate) {
+          eDate = new Date(sDate);
+          eDate.setHours(23, 59, 59, 999);
+        }
+        if (!sDate && eDate) {
+          sDate = new Date(eDate);
+          sDate.setHours(0, 0, 0, 0);
+        }
+        if (sDate && eDate && sDate > eDate) {
+          const temp = sDate;
+          sDate = eDate;
+          eDate = temp;
+        }
+        rangeStart = sDate;
+        rangeEnd = eDate;
       } else {
-        // both present
-        sDate.setHours(0, 0, 0, 0);
-        eDate.setHours(23, 59, 59, 999);
+        // No filter: get all min/max dates for this vendor
+        const minmax = await MilkReportModel.aggregate([
+          { $match: { vlcUploaderCode: vendorId } },
+          {
+            $group: {
+              _id: null,
+              minDate: { $min: "$docDate" },
+              maxDate: { $max: "$docDate" },
+            },
+          },
+        ]);
+        if (minmax.length > 0) {
+          rangeStart = minmax[0].minDate;
+          rangeEnd = minmax[0].maxDate;
+        } else {
+          rangeStart = null;
+          rangeEnd = null;
+        }
       }
 
-      // Enforce max 10 day difference (inclusive)
-      const daysDiff = Math.floor((eDate - sDate) / (1000 * 60 * 60 * 24));
-      if (daysDiff > 9) {
-        // shrink to last 10 days window
-        sDate = new Date(eDate);
-        sDate.setDate(eDate.getDate() - 9);
-        sDate.setHours(0, 0, 0, 0);
+      let milkQuery = { vlcUploaderCode: vendorId };
+      let salesQuery = { vlcUploaderCode: vendorId };
+      let queryDateFilter = {};
+
+      if (useDateFilter && sDate && eDate) {
+        queryDateFilter = {
+          docDate: {
+            $gte: sDate,
+            $lte: eDate,
+          },
+        };
+        milkQuery = { ...milkQuery, ...queryDateFilter };
+        salesQuery = { ...salesQuery, ...queryDateFilter };
       }
 
-      // For the rest, also provide original startDate/endDate for compatibility in output
-      const queryDateFilter = {
-        docDate: {
-          $gte: sDate,
-          $lte: eDate
-        }
-      };
-
-      // Milk stats (all selected date range)
-      const vendorStats = await MilkReportModel.aggregate([
-        { $match: { vlcUploaderCode: vendorId, ...queryDateFilter } },
-        {
-          $group: {
-            _id: "$vlcUploaderCode",
-            totalMilkQuantity: { $sum: "$milkWeightLtr" },
-            avgSNF: { $avg: "$snfPercentage" },
-            avgFAT: { $avg: "$fatPercentage" },
-          }
-        }
-      ]);
+      // Milk stats (either filtered or all data)
+      let vendorStats;
+      if (useDateFilter && sDate && eDate) {
+        vendorStats = await MilkReportModel.aggregate([
+          { $match: milkQuery },
+          {
+            $group: {
+              _id: "$vlcUploaderCode",
+              totalMilkQuantity: { $sum: "$milkWeightLtr" },
+              avgSNF: { $avg: "$snfPercentage" },
+              avgFAT: { $avg: "$fatPercentage" },
+            },
+          },
+        ]);
+      } else {
+        vendorStats = await MilkReportModel.aggregate([
+          { $match: { vlcUploaderCode: vendorId } },
+          {
+            $group: {
+              _id: "$vlcUploaderCode",
+              totalMilkQuantity: { $sum: "$milkWeightLtr" },
+              avgSNF: { $avg: "$snfPercentage" },
+              avgFAT: { $avg: "$fatPercentage" },
+            },
+          },
+        ]);
+      }
 
       let totalMilkQuantity = 0, avgSNF = 0, avgFAT = 0;
       if (vendorStats.length > 0) {
@@ -661,60 +687,95 @@ class SupervisorController {
         avgFAT = vendorStats[0].avgFAT || 0;
       }
 
-      // Find sales/assets in this date window (for milk: same range)
-      const [milkRaw, salesRaw, assetsRaw] = await Promise.all([
-        MilkReportModel.find({
-          vlcUploaderCode: vendorId,
-          ...queryDateFilter,
-        })
-          .select(
-            "docDate shift vlcUploaderCode vlcName milkWeightLtr fatPercentage snfPercentage edited history uploadedOn"
-          )
-          .sort({ docDate: -1 })
-          .lean(),
+      // Find sales/assets (milk/sales: filtered if dates given, else all, assets: always all)
+      let milkRaw, salesRaw, assetsRaw;
+      if (useDateFilter && sDate && eDate) {
+        [milkRaw, salesRaw, assetsRaw] = await Promise.all([
+          MilkReportModel.find(milkQuery)
+            .select(
+              "docDate shift vlcUploaderCode vlcName milkWeightLtr fatPercentage snfPercentage edited history uploadedOn"
+            )
+            .sort({ docDate: -1 })
+            .lean(),
 
-        SalesReportModel.find({
-          vlcUploaderCode: vendorId,
-          ...queryDateFilter,
-        })
-          .select(
-            "docDate vlcUploaderCode itemCode itemName quantity edited history uploadedOn"
-          )
-          .sort({ docDate: -1 })
-          .lean(),
+          SalesReportModel.find(salesQuery)
+            .select(
+              "docDate vlcUploaderCode itemCode itemName quantity edited history uploadedOn"
+            )
+            .sort({ docDate: -1 })
+            .lean(),
 
-        AssetsReportModel.find({
-          vlcCode: vendorId,
-        })
-          .select(
-            "uploadedOn uploadedBy vlcCode srNo stockNo rt duplicate vlcName status cStatus can lid pvc dps keyboard printer charger stripper solar controller ews display battery bond vspSign history"
-          )
-          .sort({ uploadedOn: -1 })
-          .lean(),
-      ]);
+          AssetsReportModel.find({
+            vlcCode: vendorId,
+          })
+            .select(
+              "uploadedOn uploadedBy vlcCode srNo stockNo rt duplicate vlcName status cStatus can lid pvc dps keyboard printer charger stripper solar controller ews display battery bond vspSign history"
+            )
+            .sort({ uploadedOn: -1 })
+            .lean(),
+        ]);
+      } else {
+        [milkRaw, salesRaw, assetsRaw] = await Promise.all([
+          MilkReportModel.find({ vlcUploaderCode: vendorId })
+            .select(
+              "docDate shift vlcUploaderCode vlcName milkWeightLtr fatPercentage snfPercentage edited history uploadedOn"
+            )
+            .sort({ docDate: -1 })
+            .lean(),
+
+          SalesReportModel.find({ vlcUploaderCode: vendorId })
+            .select(
+              "docDate vlcUploaderCode itemCode itemName quantity edited history uploadedOn"
+            )
+            .sort({ docDate: -1 })
+            .lean(),
+
+          AssetsReportModel.find({
+            vlcCode: vendorId,
+          })
+            .select(
+              "uploadedOn uploadedBy vlcCode srNo stockNo rt duplicate vlcName status cStatus can lid pvc dps keyboard printer charger stripper solar controller ews display battery bond vspSign history"
+            )
+            .sort({ uploadedOn: -1 })
+            .lean(),
+        ]);
+      }
 
       // Build per-date, per-shift milk quantity
-      const perDateMilk = {};
-      // days in [sDate, eDate]
-      for (let i = 0; i <= 9; ++i) {
-        const d = new Date(sDate);
-        d.setDate(sDate.getDate() + i);
-        if (d > eDate) break;
-        const f = formatDate(d);
-        perDateMilk[f] = { date: f, MORNING: 0, EVENING: 0 };
-      }
-      for (const r of milkRaw) {
-        const fDate = formatDate(r.docDate);
-        if (!perDateMilk[fDate]) continue; // out of selected range
-        const shift = r.shift ? r.shift.toUpperCase() : "";
-        if (shift === "MORNING") {
-          perDateMilk[fDate].MORNING += r.milkWeightLtr || 0;
-        } else if (shift === "EVENING") {
-          perDateMilk[fDate].EVENING += r.milkWeightLtr || 0;
+      let eachDayStats = [];
+      let dateRangeOutput = {};
+
+      if (rangeStart && rangeEnd) {
+        // Always try to prepare per-date stats and dateRange (full or filtered)
+        const perDateMilk = {};
+        let datePtr = new Date(rangeStart);
+        datePtr.setHours(0, 0, 0, 0);
+        let limitDate = new Date(rangeEnd);
+        limitDate.setHours(23, 59, 59, 999);
+        while (datePtr <= limitDate) {
+          const f = formatDate(datePtr);
+          perDateMilk[f] = { date: f, MORNING: 0, EVENING: 0 };
+          datePtr.setDate(datePtr.getDate() + 1);
         }
+        for (const r of milkRaw) {
+          const fDate = formatDate(r.docDate);
+          if (!perDateMilk[fDate]) continue;
+          const shift = r.shift ? r.shift.toUpperCase() : "";
+          if (shift === "MORNING") {
+            perDateMilk[fDate].MORNING += r.milkWeightLtr || 0;
+          } else if (shift === "EVENING") {
+            perDateMilk[fDate].EVENING += r.milkWeightLtr || 0;
+          }
+        }
+        eachDayStats = Object.values(perDateMilk);
+        dateRangeOutput = {
+          startingDate: formatDate(rangeStart),
+          endingDate: formatDate(rangeEnd),
+        };
+      } else {
+        eachDayStats = [];
+        dateRangeOutput = {};
       }
-      // Construct array for API output
-      const eachDayStats = Object.values(perDateMilk);
 
       // Format main milk, sales, assets data
       const milkReports = milkRaw.map((r) => ({
@@ -815,10 +876,7 @@ class SupervisorController {
         totalMilkQuantity,
         avgSNF,
         avgFAT,
-        dateRange: {
-          startingDate: formatDate(sDate),
-          endingDate: formatDate(eDate),
-        },
+        dateRange: dateRangeOutput,
         eachDayMilkStats: eachDayStats // [{ date, MORNING, EVENING }]
       });
     } catch (error) {
