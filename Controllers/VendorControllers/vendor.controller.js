@@ -118,6 +118,11 @@ class VendorController {
     return d instanceof Date && !isNaN(d.getTime());
   };
 
+  escapeRegex(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  
+
   
   getVendorMilkReport = async (req, res) => {
     try {
@@ -152,38 +157,69 @@ class VendorController {
         };
       }
       
+      // Add search feature
+if (search && search.trim() !== "") {
+  const searchString = search.trim();
+  const safeSearch = this.escapeRegex(searchString);
+  const regex = new RegExp(safeSearch, "i");
+
+  const orQueries = [
+    { shift: regex },
+    { vlcUploaderCode: regex },
+    { vlcName: regex },
+  ];
+
+  // Numeric fields
+  const searchNum = Number(searchString);
+  if (!isNaN(searchNum)) {
+    orQueries.push(
+      { milkWeightLtr: searchNum },
+      { fatPercentage: searchNum },
+      { snfPercentage: searchNum }
+    );
+  }
+
+  // Date search (STRICT, SAFE)
+  const parsedDate = new Date(searchString);
+  if (!isNaN(parsedDate.getTime())) {
+    orQueries.push({ docDate: parsedDate });
+  }
+
+  query.$or = orQueries;
+}
+
 
       // Add search feature
-      if (search && search.trim() !== "") {
-        const searchString = search.trim();
-        const regex = new RegExp(searchString, "i");
-        const orQueries = [
-          { shift: regex },
-          { vlcUploaderCode: regex },
-          { vlcName: regex },
-        ];
+      // if (search && search.trim() !== "") {
+      //   const searchString = search.trim();
+      //   const regex = new RegExp(searchString, "i");
+      //   const orQueries = [
+      //     { shift: regex },
+      //     { vlcUploaderCode: regex },
+      //     { vlcName: regex },
+      //   ];
 
-        // For number fields, try to match if search is number
-        const isNumberSearch = !isNaN(searchString) && searchString !== "";
-        if (isNumberSearch) {
-          const searchNum = Number(searchString);
-          orQueries.push(
-            { milkWeightLtr: searchNum },
-            { fatPercentage: searchNum },
-            { snfPercentage: searchNum }
-          );
-        }
+      //   // For number fields, try to match if search is number
+      //   const isNumberSearch = !isNaN(searchString) && searchString !== "";
+      //   if (isNumberSearch) {
+      //     const searchNum = Number(searchString);
+      //     orQueries.push(
+      //       { milkWeightLtr: searchNum },
+      //       { fatPercentage: searchNum },
+      //       { snfPercentage: searchNum }
+      //     );
+      //   }
 
-        // For docDate, allow searching as string YYYY-MM-DD or DD-MM-YYYY (by formatting date below and filtering inside .map if needed)
-        // But since MongoDB only supports date natively, we'll allow direct date equality
-        const searchDate = new Date(searchString);
-        if (this.isValidDate(searchDate)) {
-          orQueries.push({ docDate: searchDate });
-        }
+      //   // For docDate, allow searching as string YYYY-MM-DD or DD-MM-YYYY (by formatting date below and filtering inside .map if needed)
+      //   // But since MongoDB only supports date natively, we'll allow direct date equality
+      //   const searchDate = new Date(searchString);
+      //   if (this.isValidDate(searchDate)) {
+      //     orQueries.push({ docDate: searchDate });
+      //   }
         
 
-        query.$or = orQueries;
-      }
+      //   query.$or = orQueries;
+      // }
 
       const skip = (page - 1) * limit;
       const totalCount = await MilkReportModel.countDocuments(query);
