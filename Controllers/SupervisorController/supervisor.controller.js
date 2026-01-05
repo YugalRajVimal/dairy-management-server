@@ -553,6 +553,253 @@ class SupervisorController {
     }
   };
   
+  getAllVendorsByRoutes = async (req, res) => {
+    console.log("getAllVendorsByRoutes called with req.user:", req.user);
+    if (req.user.role !== "Supervisor") {
+      console.log("Role check failed:", req.user.role);
+      return res.status(403).json({
+        message: "Unauthorized: Only Supervisors can perform this action.",
+      });
+    }
+
+    try {
+      let { page = 1, limit, search = "", route } = req.query;
+      page = Number(page);
+      console.log("Query params -> page:", page, "limit:", limit, "search:", search, "route:", route);
+
+      // Route validation
+      if (typeof route === "undefined" || route === "" || route === null) {
+        console.log("Route check failed. Route:", route);
+        return res.status(400).json({
+          message: "Route parameter is required in query.",
+        });
+      }
+
+      // If limit is not set or falsy, show all data (do not paginate)
+      let usePagination = true;
+      if (!limit || isNaN(Number(limit))) {
+        usePagination = false;
+        limit = undefined;
+      } else {
+        limit = Number(limit);
+        if (limit <= 0) usePagination = false;
+      }
+      const skip = usePagination ? (page - 1) * limit : 0;
+      console.log("Pagination -> usePagination:", usePagination, "skip:", skip);
+
+      // Fetch supervisor (still require onboardedBy for validation)
+      const supervisor = await UserModel.findById(req.user.id).select("onboardedBy");
+      console.log("Supervisor fetched:", supervisor);
+
+      if (!supervisor) {
+        console.log("Supervisor info not found for id:", req.user.id);
+        return res.status(400).json({
+          message: "Supervisor information not found.",
+        });
+      }
+
+      if (!supervisor.onboardedBy) {
+        console.log("Supervisor onboardedBy missing:", supervisor);
+        return res.status(400).json({
+          message: "Supervisor's onboardedBy information not found.",
+        });
+      }
+
+      // Build search filter if needed
+      let searchFilter = {};
+      if (search && typeof search === "string" && search.trim() !== "") {
+        const regex = new RegExp(search.trim(), "i");
+        searchFilter = {
+          $or: [
+            { name: regex },
+            { email: regex },
+            { phoneNo: regex },
+            { vendorId: regex },
+            { "address.addressLine": regex },
+            { "address.city": regex },
+            { "address.state": regex },
+            { "address.pincode": regex },
+          ]
+        };
+        console.log("Search filter applied:", searchFilter);
+      } else {
+        console.log("No search filter applied.");
+      }
+
+      // Function to run aggregation with supplied $match filter and return {vendors, total}
+      const runVendorAggregation = async (matchFilter) => {
+        let pipeline = [
+          {
+            $match: matchFilter,
+          }
+        ];
+
+        if (usePagination) {
+          pipeline.push({
+            $facet: {
+              metadata: [
+                { $count: "total" }
+              ],
+              data: [
+                { $sort: { createdAt: -1 } },
+                { $skip: skip },
+                { $limit: limit },
+                {
+                  $project: {
+                    password: 0,
+                    otp: 0,
+                    otpExpires: 0,
+                    __v: 0
+                  }
+                }
+              ]
+            }
+          });
+
+          console.log("Aggregation pipeline (pagination):", JSON.stringify(pipeline, null, 2));
+          const result = await UserModel.aggregate(pipeline);
+          const total = result?.[0]?.metadata?.[0]?.total || 0;
+          const vendors = result?.[0]?.data || [];
+          return { vendors, total };
+        } else {
+          pipeline.push(
+            { $sort: { createdAt: -1 } },
+            {
+              $project: {
+                password: 0,
+                otp: 0,
+                otpExpires: 0,
+                __v: 0
+              }
+            }
+          );
+          console.log("Aggregation pipeline (no pagination):", JSON.stringify(pipeline, null, 2));
+          const vendors = await UserModel.aggregate(pipeline);
+          return { vendors, total: vendors.length };
+        }
+      };
+
+      // Prepare for type-flexible route logic
+      // If route contains only digits (no alphabets), try both string and number variants
+      const isRouteInteger = typeof route === "string" && /^[0-9]+$/.test(route);
+      let vendors = [];
+      let total = 0;
+
+      if (isRouteInteger) {
+        // Try both string and integer
+        const routeInt = parseInt(route, 10);
+        // First attempt with route as string
+        const matchString = {
+          role: "Vendor",
+          route: route,
+          onboardedBy: supervisor.onboardedBy,
+          ...searchFilter,
+        };
+        // Second attempt with route as number
+        const matchInt = {
+          role: "Vendor",
+          route: routeInt,
+          onboardedBy: supervisor.onboardedBy,
+          ...searchFilter,
+        };
+
+        const resString = await runVendorAggregation(matchString);
+        const resInt = await runVendorAggregation(matchInt);
+
+        // Combine vendors without duplication (by vendorId)
+        const vendorMap = new Map();
+        (resString.vendors || []).forEach(v => { if (v.vendorId) vendorMap.set(v.vendorId, v); });
+        (resInt.vendors || []).forEach(v => { if (v.vendorId) vendorMap.set(v.vendorId, v); });
+        vendors = Array.from(vendorMap.values());
+
+        // Pagination total and pages computation
+        if (usePagination) {
+          // Note: Metadata counts are for each query, sum? or max? We'll pick the distinct count after merging.
+          total = vendorMap.size;
+          // Pagination: slice result based on input page & limit.
+          const pagedVendors = vendors.slice(0 + skip, limit ? skip + limit : undefined);
+          vendors = pagedVendors;
+        } else {
+          total = vendorMap.size;
+          // vendors array already contains all merged vendors
+        }
+
+      } else {
+        // Normal: route is string with alphabets or non-integer, just use as is
+        const matchFilter = {
+          role: "Vendor",
+          route: route,
+          onboardedBy: supervisor.onboardedBy,
+          ...searchFilter,
+        };
+        const aggRes = await runVendorAggregation(matchFilter);
+        vendors = aggRes.vendors;
+        total = aggRes.total;
+      }
+
+      // Statistics: totalMilkQuantity, avgSNF, avgFAT
+      if (vendors.length > 0) {
+        const vendorIds = vendors.map(v => v.vendorId).filter(Boolean);
+        if (vendorIds.length > 0) {
+          const vendorAggregate = await MilkReportModel.aggregate([
+            { $match: { vlcUploaderCode: { $in: vendorIds } } },
+            {
+              $group: {
+                _id: "$vlcUploaderCode",
+                totalMilkQuantity: { $sum: "$milkWeightLtr" },
+                avgSNF: { $avg: "$snfPercentage" },
+                avgFAT: { $avg: "$fatPercentage" }
+              }
+            }
+          ]);
+          const vendorStatsMap = {};
+          vendorAggregate.forEach(va => {
+            vendorStatsMap[va._id] = {
+              totalMilkQuantity: va.totalMilkQuantity || 0,
+              avgSNF: va.avgSNF || 0,
+              avgFAT: va.avgFAT || 0
+            };
+          });
+
+          vendors.forEach(v => {
+            const stats = vendorStatsMap[v.vendorId] || {};
+            v.totalMilkQuantity = stats.totalMilkQuantity || 0;
+            v.avgSNF = stats.avgSNF || 0;
+            v.avgFAT = stats.avgFAT || 0;
+          });
+        }
+      }
+
+      // Pagination section for consistent response (return paged view for pagination calls)
+      let pagination;
+      if (usePagination) {
+        pagination = {
+          page: page,
+          limit: limit,
+          total,
+          totalPages: Math.ceil(total / (limit || 1)),
+        };
+      } else {
+        pagination = {
+          page: 1,
+          limit: vendors.length,
+          total: vendors.length,
+          totalPages: 1,
+        };
+      }
+
+      return res.status(200).json({
+        message: "Vendors fetched successfully.",
+        vendors,
+        pagination,
+      });
+
+    } catch (error) {
+      console.error("Error fetching Vendors:", error);
+      return res.status(500).json({ message: "Internal Server Error" });
+    }
+  };
+  
   getVendorReportsByVendorId = async (req, res) => {
     const formatDate = (d) => {
       if (!d) return "";

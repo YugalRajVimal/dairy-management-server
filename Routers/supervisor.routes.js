@@ -28,6 +28,11 @@ supervisorRouter.get("/get-all-vendors", jwtAuth, (req, res) => {
   supervisorController.getAllVendors(req, res);
 });
 
+supervisorRouter.get("/get-all-vendors-by-routes", jwtAuth, (req, res) => {
+  supervisorController.getAllVendorsByRoutes(req, res);
+});
+
+
 supervisorRouter.get("/vendor/:vendorId/reports", jwtAuth, (req, res) => {
   supervisorController.getVendorReportsByVendorId(req, res);
 });
