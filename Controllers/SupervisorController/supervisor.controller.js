@@ -102,6 +102,101 @@ class SupervisorController {
   
 
 
+  // getMilkReports = async (req, res) => {
+  //   if (req.user.role !== "Supervisor") {
+  //     return res.status(403).json({
+  //       message: "Unauthorized: Only Supervisor can perform this action.",
+  //     });
+  //   }
+
+  //   try {
+  //     const { startDate, endDate } = req.query;
+
+  //     // Fetch supervisor and get their onboardedBy
+  //     const supervisor = await UserModel.findById(req.user.id).select("onboardedBy");
+  //     if (!supervisor || !supervisor.onboardedBy) {
+  //       return res.status(400).json({
+  //         message: "Supervisor's onboardedBy information not found.",
+  //       });
+  //     }
+
+  //     // Find all vendors that have the same onboardedBy as the supervisor's onboardedBy
+  //     const vendorIds = await UserModel.find({
+  //       role: "Vendor",
+  //       onboardedBy: supervisor.onboardedBy,
+  //     }).distinct("vendorId");
+
+  //     if (!vendorIds || vendorIds.length === 0) {
+  //       return res.status(200).json({
+  //         message: "No vendors found for this supervisor.",
+  //         milkWeightSum: 0,
+  //         total: 0,
+  //         data: [],
+  //       });
+  //     }
+
+  //     // Main aggregation
+  //     const matchStage = {
+  //       vlcUploaderCode: { $in: vendorIds },
+  //     };
+
+  //     // Add date filtering
+  //     if (startDate || endDate) {
+  //       matchStage.docDate = {};
+  //       if (startDate) matchStage.docDate.$gte = new Date(startDate);
+  //       if (endDate) {
+  //         const end = new Date(endDate);
+  //         end.setHours(23, 59, 59, 999);
+  //         matchStage.docDate.$lte = end;
+  //       }
+  //     }
+
+  //     const result = await MilkReportModel.aggregate([
+  //       { $match: matchStage },
+
+  //       {
+  //         $facet: {
+  //           metadata: [
+  //             { $count: "total" },
+  //             { $project: { total: 1 } },
+  //           ],
+
+  //           weightSum: [
+  //             { $group: { _id: null, total: { $sum: "$milkWeightLtr" } } },
+  //           ],
+
+  //           allData: [
+  //             { $sort: { docDate: -1 } },
+  //             {
+  //               $project: {
+  //                 vlcUploaderCode: 1,
+  //                 docDate: 1,
+  //                 milkWeightLtr: 1,
+  //                 shift: 1,
+  //               },
+  //             },
+  //           ],
+  //         },
+  //       },
+  //     ]);
+
+  //     const totalReports = result[0]?.metadata?.[0]?.total || 0;
+  //     const milkWeightSum = result[0]?.weightSum?.[0]?.total || 0;
+
+  //     return res.status(200).json({
+  //       message: "Milk reports fetched successfully.",
+  //       milkWeightSum,
+  //       total: totalReports,
+  //       data: result[0]?.allData || [],
+  //     });
+
+  //   } catch (error) {
+  //     console.error("Error fetching milk reports:", error);
+  //     return res.status(500).json({ message: "Internal Server Error" });
+  //   }
+  // };
+
+
   getMilkReports = async (req, res) => {
     if (req.user.role !== "Supervisor") {
       return res.status(403).json({
@@ -112,82 +207,63 @@ class SupervisorController {
     try {
       const { startDate, endDate } = req.query;
 
-      // Fetch supervisor and get their onboardedBy
-      const supervisor = await UserModel.findById(req.user.id).select("onboardedBy");
-      if (!supervisor || !supervisor.onboardedBy) {
+      // Fetch supervisor's onboardedBy directly and only that field, as lean document
+      const supervisor = await UserModel.findById(req.user.id)
+        .select("onboardedBy")
+        .lean();
+
+      if (!supervisor?.onboardedBy) {
         return res.status(400).json({
           message: "Supervisor's onboardedBy information not found.",
         });
       }
 
-      // Find all vendors that have the same onboardedBy as the supervisor's onboardedBy
-      const vendorIds = await UserModel.find({
-        role: "Vendor",
-        onboardedBy: supervisor.onboardedBy,
-      }).distinct("vendorId");
+      // Get valid vendorId values for this supervisor's onboardedBy in one pass
+      const vendorIds = await UserModel.distinct(
+        "vendorId",
+        { role: "Vendor", onboardedBy: supervisor.onboardedBy }
+      );
 
       if (!vendorIds || vendorIds.length === 0) {
         return res.status(200).json({
           message: "No vendors found for this supervisor.",
           milkWeightSum: 0,
-          total: 0,
-          data: [],
+          total: 0
         });
       }
 
-      // Main aggregation
-      const matchStage = {
-        vlcUploaderCode: { $in: vendorIds },
-      };
-
-      // Add date filtering
+      // Improve performance: aggregate only for the required summary numbers
+      const matchStage = { vlcUploaderCode: { $in: vendorIds.filter(Boolean) } };
       if (startDate || endDate) {
-        matchStage.docDate = {};
-        if (startDate) matchStage.docDate.$gte = new Date(startDate);
+        let dateQuery = {};
+        if (startDate) dateQuery.$gte = new Date(startDate);
         if (endDate) {
           const end = new Date(endDate);
           end.setHours(23, 59, 59, 999);
-          matchStage.docDate.$lte = end;
+          dateQuery.$lte = end;
         }
+        if (Object.keys(dateQuery).length) matchStage.docDate = dateQuery;
       }
 
-      const result = await MilkReportModel.aggregate([
+      const [aggResult] = await MilkReportModel.aggregate([
         { $match: matchStage },
-
         {
-          $facet: {
-            metadata: [
-              { $count: "total" },
-              { $project: { total: 1 } },
-            ],
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            milkWeightSum: { $sum: "$milkWeightLtr" }
+          }
+        }
+      ]).allowDiskUse(true);
 
-            weightSum: [
-              { $group: { _id: null, total: { $sum: "$milkWeightLtr" } } },
-            ],
-
-            allData: [
-              { $sort: { docDate: -1 } },
-              {
-                $project: {
-                  vlcUploaderCode: 1,
-                  docDate: 1,
-                  milkWeightLtr: 1,
-                  shift: 1,
-                },
-              },
-            ],
-          },
-        },
-      ]);
-
-      const totalReports = result[0]?.metadata?.[0]?.total || 0;
-      const milkWeightSum = result[0]?.weightSum?.[0]?.total || 0;
+      // Defensive defaulting
+      const total = aggResult?.total || 0;
+      const milkWeightSum = aggResult?.milkWeightSum || 0;
 
       return res.status(200).json({
         message: "Milk reports fetched successfully.",
         milkWeightSum,
-        total: totalReports,
-        data: result[0]?.allData || [],
+        total
       });
 
     } catch (error) {
