@@ -1295,6 +1295,44 @@ class SubAdminController {
         });
       }
 
+      // Check if any docDate is in the future (after today) and check date format validity
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Start of today
+
+      // Helper for valid date check (not NaN and is Date instance)
+      function isValidDate(d) {
+        return d instanceof Date && !isNaN(d.getTime());
+      }
+
+      // Collect records with invalid date format or in future
+      const invalidFormatReports = [];
+      const futureDates = [];
+
+      validReports.forEach(r => {
+        if (!isValidDate(r.docDate)) {
+          invalidFormatReports.push(r);
+        } else {
+          // Only compare year, month, day (ignore time)
+          const doc = new Date(r.docDate.getFullYear(), r.docDate.getMonth(), r.docDate.getDate());
+          const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+          if (doc > now) {
+            futureDates.push(r);
+          }
+        }
+      });
+
+      if (invalidFormatReports.length > 0) {
+        return res.status(400).json({
+          error: "One or more records have invalid Doc Date format. Please use 'dd/mm/yyyy' or a valid date.",
+        });
+      }
+
+      if (futureDates.length > 0) {
+        return res.status(400).json({
+          error: "One or more records have a Doc Date in the future. Please ensure all Doc Dates are today or earlier.",
+        });
+      }
+
       // --- Begin: Prevent duplicate upload for same docDate+shift by same user ---
       // Build a unique set of (docDate, shift) from this upload
       const keyTuples = new Set();
