@@ -779,9 +779,12 @@ DHOLPUR PVT LTD Team`;
       }
 
       // --- Helper function to parse values (string or array) ---
+      // Empty string or array will resolve to []
       const parseValues = (val) => {
-        if (!val) return [];
+        if (typeof val === "undefined" || val === null) return [];
         if (typeof val === "string") {
+          // return empty array if val is "" or just whitespaces
+          if (val.trim() === "") return [];
           return val
             .split(",")
             .map((v) => v.trim())
@@ -798,17 +801,19 @@ DHOLPUR PVT LTD Team`;
       const dpsValues = parseValues(dps);
       const bondValues = parseValues(bond);
 
-      // --- Check for DPS conflicts ---
+      // --- Check for DPS conflicts, but ignore null/empty value duplicates ---
       if (dpsValues.length > 0) {
         const possibleDpsConflicts = await IssuedAssetsToSubAdminModel.find({
-          dps: { $exists: true, $ne: "" },
+          dps: { $exists: true }
         });
 
         let dpsConflicts = [];
 
         possibleDpsConflicts.forEach((asset) => {
           const assetDpsValues = parseValues(asset.dps);
-          const overlapping = assetDpsValues.filter((val) =>
+          // Ignore blank/null DPS in other records as per new rule
+          const assetDpsFiltered = assetDpsValues.filter((v) => v.length > 0);
+          const overlapping = assetDpsFiltered.filter((val) =>
             dpsValues.includes(val)
           );
 
@@ -829,17 +834,19 @@ DHOLPUR PVT LTD Team`;
         }
       }
 
-      // --- Check for Bond conflicts (same logic as DPS) ---
+      // --- Check for Bond conflicts, ignoring null/empty duplicate values ---
       if (bondValues.length > 0) {
         const possibleBondConflicts = await IssuedAssetsToSubAdminModel.find({
-          bond: { $exists: true, $ne: "" },
+          bond: { $exists: true }
         });
 
         let bondConflicts = [];
 
         possibleBondConflicts.forEach((asset) => {
           const assetBondValues = parseValues(asset.bond);
-          const overlapping = assetBondValues.filter((val) =>
+          // Ignore blank/null bond in other records as per new rule
+          const assetBondFiltered = assetBondValues.filter((v) => v.length > 0);
+          const overlapping = assetBondFiltered.filter((val) =>
             bondValues.includes(val)
           );
 
@@ -940,6 +947,7 @@ DHOLPUR PVT LTD Team`;
 
       // --- Check for DPS conflicts ---
       if (dpsValues.length > 0) {
+        // Only check for actual values, not empty or null
         const possibleDpsConflicts = await IssuedAssetsToSubAdminModel.find({
           _id: { $ne: _id }, // exclude current record
           dps: { $exists: true, $ne: "" },
@@ -948,9 +956,12 @@ DHOLPUR PVT LTD Team`;
         let dpsConflicts = [];
 
         possibleDpsConflicts.forEach((asset) => {
-          const assetDpsValues = parseValues(asset.dps);
+          const assetDpsValues = parseValues(asset.dps).filter((val) => val.length > 0);
+          if (assetDpsValues.length === 0) return; // skip records with only empty DPS
+
+          // Find intersection, but skip empty/nulls
           const overlapping = assetDpsValues.filter((val) =>
-            dpsValues.includes(val)
+            dpsValues.includes(val) && val.length > 0
           );
 
           if (overlapping.length > 0) {
@@ -972,6 +983,7 @@ DHOLPUR PVT LTD Team`;
 
       // --- Check for Bond conflicts ---
       if (bondValues.length > 0) {
+        // Only check for actual values, not empty or null
         const possibleBondConflicts = await IssuedAssetsToSubAdminModel.find({
           _id: { $ne: _id }, // exclude current record
           bond: { $exists: true, $ne: "" },
@@ -980,9 +992,12 @@ DHOLPUR PVT LTD Team`;
         let bondConflicts = [];
 
         possibleBondConflicts.forEach((asset) => {
-          const assetBondValues = parseValues(asset.bond);
+          const assetBondValues = parseValues(asset.bond).filter((val) => val.length > 0);
+          if (assetBondValues.length === 0) return; // skip records with only empty Bond
+
+          // Find intersection, but skip empty/nulls
           const overlapping = assetBondValues.filter((val) =>
-            bondValues.includes(val)
+            bondValues.includes(val) && val.length > 0
           );
 
           if (overlapping.length > 0) {
