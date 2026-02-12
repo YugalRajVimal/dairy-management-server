@@ -23,6 +23,7 @@ const usedAssetsOfSubAdminSchema = new mongoose.Schema(
     lid: { type: Number, default: 0 },
     pvc: { type: Number, default: 0 },
     dps: { type: String, default: null, unique: true, sparse: true }, // allow null, unique when set
+    dpsCount: { type: Number, default: 0 }, // Added field
     keyboard: { type: Number, default: 0 },
     printer: { type: Number, default: 0 },
     charger: { type: Number, default: 0 },
@@ -33,6 +34,7 @@ const usedAssetsOfSubAdminSchema = new mongoose.Schema(
     display: { type: Number, default: 0 },
     battery: { type: Number, default: 0 },
     bond: { type: String, default: null, unique: true, sparse: true }, // allow null, unique when set
+    bondCount: { type: Number, default: 0 }, // Added field
     // vspSign: { type: Number, default: 0 },
     history: [
       {

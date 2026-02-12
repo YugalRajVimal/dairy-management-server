@@ -760,7 +760,8 @@ DHOLPUR PVT LTD Team`;
     }
 
     try {
-      const { subAdminId, ...formData } = req.body;
+      // Directly extract dpsCount and bondCount from req.body without any manipulation or calculation
+      const { subAdminId, dpsCount, bondCount, ...formData } = req.body;
       const { dps, bond } = formData;
 
       if (!subAdminId) {
@@ -778,12 +779,10 @@ DHOLPUR PVT LTD Team`;
         });
       }
 
-      // --- Helper function to parse values (string or array) ---
-      // Empty string or array will resolve to []
+      // Helper for normalizing comma-separated or array values
       const parseValues = (val) => {
         if (typeof val === "undefined" || val === null) return [];
         if (typeof val === "string") {
-          // return empty array if val is "" or just whitespaces
           if (val.trim() === "") return [];
           return val
             .split(",")
@@ -797,7 +796,6 @@ DHOLPUR PVT LTD Team`;
         return [];
       };
 
-      // Parse both dps and bond values
       const dpsValues = parseValues(dps);
       const bondValues = parseValues(bond);
 
@@ -811,7 +809,6 @@ DHOLPUR PVT LTD Team`;
 
         possibleDpsConflicts.forEach((asset) => {
           const assetDpsValues = parseValues(asset.dps);
-          // Ignore blank/null DPS in other records as per new rule
           const assetDpsFiltered = assetDpsValues.filter((v) => v.length > 0);
           const overlapping = assetDpsFiltered.filter((val) =>
             dpsValues.includes(val)
@@ -844,7 +841,6 @@ DHOLPUR PVT LTD Team`;
 
         possibleBondConflicts.forEach((asset) => {
           const assetBondValues = parseValues(asset.bond);
-          // Ignore blank/null bond in other records as per new rule
           const assetBondFiltered = assetBondValues.filter((v) => v.length > 0);
           const overlapping = assetBondFiltered.filter((val) =>
             bondValues.includes(val)
@@ -867,11 +863,13 @@ DHOLPUR PVT LTD Team`;
         }
       }
 
-      // --- Create new asset report ---
+      // --- Create new asset report, saving dpsCount and bondCount directly from form input ---
       const newAssetReport = new IssuedAssetsToSubAdminModel({
         ...formData,
-        dps: dpsValues.join(","), // store as comma-separated if needed
+        dps: dpsValues.join(","),
         bond: bondValues.join(","),
+        dpsCount: dpsCount,
+        bondCount: bondCount,
         subAdminId,
         uploadedOn: new Date(),
         uploadedBy: req.user.id,
@@ -903,7 +901,8 @@ DHOLPUR PVT LTD Team`;
     }
 
     try {
-      const { _id, ...updatedFields } = req.body;
+      // Directly extract dpsCount and bondCount from updatedFields, do not recalculate
+      const { _id, dpsCount, bondCount, ...updatedFields } = req.body;
 
       if (!_id) {
         return res
@@ -947,7 +946,6 @@ DHOLPUR PVT LTD Team`;
 
       // --- Check for DPS conflicts ---
       if (dpsValues.length > 0) {
-        // Only check for actual values, not empty or null
         const possibleDpsConflicts = await IssuedAssetsToSubAdminModel.find({
           _id: { $ne: _id }, // exclude current record
           dps: { $exists: true, $ne: "" },
@@ -957,9 +955,8 @@ DHOLPUR PVT LTD Team`;
 
         possibleDpsConflicts.forEach((asset) => {
           const assetDpsValues = parseValues(asset.dps).filter((val) => val.length > 0);
-          if (assetDpsValues.length === 0) return; // skip records with only empty DPS
+          if (assetDpsValues.length === 0) return;
 
-          // Find intersection, but skip empty/nulls
           const overlapping = assetDpsValues.filter((val) =>
             dpsValues.includes(val) && val.length > 0
           );
@@ -983,7 +980,6 @@ DHOLPUR PVT LTD Team`;
 
       // --- Check for Bond conflicts ---
       if (bondValues.length > 0) {
-        // Only check for actual values, not empty or null
         const possibleBondConflicts = await IssuedAssetsToSubAdminModel.find({
           _id: { $ne: _id }, // exclude current record
           bond: { $exists: true, $ne: "" },
@@ -993,9 +989,8 @@ DHOLPUR PVT LTD Team`;
 
         possibleBondConflicts.forEach((asset) => {
           const assetBondValues = parseValues(asset.bond).filter((val) => val.length > 0);
-          if (assetBondValues.length === 0) return; // skip records with only empty Bond
+          if (assetBondValues.length === 0) return;
 
-          // Find intersection, but skip empty/nulls
           const overlapping = assetBondValues.filter((val) =>
             bondValues.includes(val) && val.length > 0
           );
@@ -1055,6 +1050,16 @@ DHOLPUR PVT LTD Team`;
           }
           hasChanges = true;
         }
+      }
+
+      // Save dpsCount and bondCount directly from input, don't calculate
+      if (existingAssetReport.schema.paths["dpsCount"]) {
+        existingAssetReport["dpsCount"] = dpsCount;
+        hasChanges = true;
+      }
+      if (existingAssetReport.schema.paths["bondCount"]) {
+        existingAssetReport["bondCount"] = bondCount;
+        hasChanges = true;
       }
 
       if (hasChanges) {

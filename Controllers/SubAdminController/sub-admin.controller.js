@@ -1,3 +1,4 @@
+
 import xlsx from "xlsx";
 import fs from "fs";
 import MilkReportModel from "../../Schema/milk.report.schema.js";
@@ -2543,6 +2544,8 @@ class SubAdminController {
         battery,
         bond,
         vspSign,
+        dpsCount,
+        bondCount,
       } = req.body;
 
       const subAdminId = req.user.id;
@@ -2664,6 +2667,8 @@ class SubAdminController {
         "ews",
         "display",
         "battery",
+        "dpsCount",
+        "bondCount",
       ];
 
       for (const field of numericFields) {
@@ -2714,6 +2719,8 @@ class SubAdminController {
         battery,
         bond,
         vspSign,
+        dpsCount,
+        bondCount,
         history: [],
       });
       await newAsset.save({ session });
@@ -2736,6 +2743,8 @@ class SubAdminController {
           display: usedAssets.display,
           battery: usedAssets.battery,
           bond: usedAssets.bond,
+          dpsCount: usedAssets.dpsCount,
+          bondCount: usedAssets.bondCount,
           changedOn: new Date(),
         });
 
@@ -2774,6 +2783,8 @@ class SubAdminController {
           display,
           battery,
           bond: bondValues.join(","),
+          dpsCount: Number(dpsCount) || 0,
+          bondCount: Number(bondCount) || 0,
           history: [],
         });
         await newUsed.save({ session });
@@ -3061,6 +3072,8 @@ class SubAdminController {
         battery,
         bond,
         vspSign,
+        dpsCount, // added
+        bondCount, // added
       } = req.body;
 
       const subAdminId = req.user.id;
@@ -3113,6 +3126,8 @@ class SubAdminController {
         "battery",
         "bond",
         "vspSign",
+        "dpsCount",    // added
+        "bondCount",   // added
       ];
 
       let isChanged = false;
@@ -3300,6 +3315,8 @@ class SubAdminController {
         "ews",
         "display",
         "battery",
+        "dpsCount",   // added
+        "bondCount",  // added
       ];
 
       for (const field of numericFields) {
@@ -3350,6 +3367,8 @@ class SubAdminController {
         battery: existingAsset.battery,
         bond: existingAsset.bond,
         vspSign: existingAsset.vspSign,
+        dpsCount: existingAsset.dpsCount,   // added
+        bondCount: existingAsset.bondCount, // added
         changedOn,
       });
 
@@ -3485,11 +3504,12 @@ class SubAdminController {
         .filter((v) => v.length > 0);
     };
 
-    // Keep "duplicate" in numericFields for reference, but treat it specially in updates below
+    // Main numeric fields. We'll always check/sum dpsCount and bondCount if present in the Excel.
     const numericFields = [
       "rt", "duplicate", "can", "lid", "pvc",
       "keyboard", "printer", "charger", "stripper",
-      "solar", "controller", "ews", "display", "battery"
+      "solar", "controller", "ews", "display", "battery",
+      "dpsCount", "bondCount"
     ];
 
     let inserted = 0, updated = 0;
@@ -3520,7 +3540,7 @@ class SubAdminController {
         });
       }
 
-      // === 1. Calculate aggregate for every numeric field ===
+      // === 1. Calculate aggregate for every numeric field, including dpsCount and bondCount ===
       let totalRequested = {};
       numericFields.forEach(field => { totalRequested[field] = 0; });
 
@@ -3528,6 +3548,8 @@ class SubAdminController {
       let rowBreakdown = {};
       numericFields.forEach(field => { rowBreakdown[field] = []; });
 
+      // Gather actual column keys for dpsCount and bondCount detection
+      // We'll treat them as normal numerical fields if present
       for (let i = 0; i < jsonRaw.length; i++) {
         const row = jsonRaw[i];
         const norm = s => (s || "").toString().trim();
@@ -3536,8 +3558,19 @@ class SubAdminController {
           return "";
         };
         numericFields.forEach(field => {
-          // Try various header case variants
-          let variants = [field, field.toUpperCase(), field.toLowerCase(), field.charAt(0).toUpperCase() + field.slice(1)];
+          let variants = [
+            field,
+            field.toUpperCase(),
+            field.toLowerCase(),
+            field.charAt(0).toUpperCase() + field.slice(1),
+          ];
+          // For dpsCount and bondCount be flexible with variant
+          if (field === "dpsCount") {
+            variants.push("DPS COUNT", "DPS Count", "dps count");
+          }
+          if (field === "bondCount") {
+            variants.push("BOND COUNT", "Bond Count", "bond count");
+          }
           let rawVal = 0;
           for (let v of variants) {
             if (Object.hasOwn(row, v) && row[v] !== undefined && row[v] !== "") {
@@ -3547,7 +3580,6 @@ class SubAdminController {
           }
           if (isNaN(rawVal)) rawVal = 0;
           totalRequested[field] += rawVal;
-          // For breakdown: record only nonzero
           if (rawVal !== 0) {
             rowBreakdown[field].push({
               row: i + 2,
@@ -3565,12 +3597,13 @@ class SubAdminController {
       let issuedAssets = {};
       numericFields.forEach(field => { issuedAssets[field] = issuedAssetsForUser[field] ? Number(issuedAssetsForUser[field]) : 0; });
 
-      // === 2. Compare sum to inventory, error details ===
+      // === 2. Compare sum to inventory, error details (dpsCount, bondCount included) ===
       let notEnough = [];
       numericFields.forEach(field => {
         const available = issuedAssets[field] - usedAssets[field];
+        // Check dpsCount and bondCount inventory like other fields, sum requested
         if (totalRequested[field] > available) {
-          notEnough.push({
+          let rowErrObj = {
             asset: field.toUpperCase(),
             requestedTotal: totalRequested[field],
             available,
@@ -3583,7 +3616,8 @@ class SubAdminController {
               }
             ],
             perRowDetails: rowBreakdown[field]
-          });
+          };
+          notEnough.push(rowErrObj);
         }
       });
 
@@ -3592,7 +3626,7 @@ class SubAdminController {
           try { await session.abortTransaction(); } catch (e) {}
           session.endSession();
         }
-        // DetailedErrors: each notEnough entry already contains detailedErrors for this asset
+        // For dpsCount and bondCount, the error object will appear as for other fields
         return res.status(400).json({
           message: "Excel upload failed due to exceeding inventory for one or more asset types.",
           numberDetails: notEnough,
@@ -3654,6 +3688,9 @@ class SubAdminController {
         const display = Number(norm(getCol(row, "Display", "display", "DISPLAY")));
         const battery = Number(norm(getCol(row, "BATTERY", "Battery", "battery")));
         const bond = norm(getCol(row, "BOND", "Bond", "bond"));
+        // Extract dpsCount and bondCount from excel
+        const dpsCount = Number(norm(getCol(row, "dpsCount", "DPS COUNT", "DPS Count", "dps count")));
+        const bondCount = Number(norm(getCol(row, "bondCount", "BOND COUNT", "Bond Count", "bond count")));
         const vspSignStr = norm(getCol(row, "YES /NO", "YES/NO", "Yes/No", "yes/no"));
         let vspSign = 0;
         if (vspSignStr.toLowerCase() === "yes") vspSign = 1;
@@ -3685,6 +3722,8 @@ class SubAdminController {
           battery: isNaN(battery) ? 0 : battery,
           bond,
           vspSign,
+          dpsCount: isNaN(dpsCount) ? 0 : dpsCount,
+          bondCount: isNaN(bondCount) ? 0 : bondCount,
         };
 
         let rowError = { row: i+2, vlcCode: vlcCode || null, details: [] };
@@ -3806,7 +3845,6 @@ class SubAdminController {
         }
 
         let usedAssetsRec = usedAssetsDraft;
-        // Find dataExists before, as we'll need to check prev DPS/BOND to remove from used assets if changed
         const dataExists = await AssetsReportModel.findOne({ vlcCode }).session(session);
 
         if (!dataExists) {
@@ -3815,7 +3853,6 @@ class SubAdminController {
             await newAsset.save({ session });
             inserted++;
             numericFields.forEach(f => {
-              // UPDATE: For duplicate field, only add to usedAssetsDraft if asset is new
               usedAssetsDraft[f] = Number(usedAssetsDraft[f] || 0) + Number(rowData[f] || 0);
             });
             if (dpsValues.length > 0)
@@ -3833,20 +3870,15 @@ class SubAdminController {
           }
         } else {
           try {
-            // New logic for removing previous DPS/BOND values no longer in new set from USED assets too
             let prevDpsValues = parseCommaValues(dataExists.dps);
             let prevBondValues = parseCommaValues(dataExists.bond);
 
-            // For DPS: remove old ones that are not present in the new set
             let removedDps = prevDpsValues.filter(d => !dpsValues.includes(d));
             if (removedDps.length > 0) {
-              // Remove from unionDps/usedAssetsDraft.dps
               unionDps = unionDps.filter(d => !removedDps.includes(d));
             }
-            // For BOND: remove old ones that are not present in the new set
             let removedBond = prevBondValues.filter(b => !bondValues.includes(b));
             if (removedBond.length > 0) {
-              // Remove from unionBond/usedAssetsDraft.bond
               unionBond = unionBond.filter(b => !removedBond.includes(b));
             }
 
@@ -3874,11 +3906,17 @@ class SubAdminController {
               battery: dataExists.battery,
               bond: dataExists.bond,
               vspSign: dataExists.vspSign,
+              dpsCount: dataExists.dpsCount,
+              bondCount: dataExists.bondCount,
               changedOn: currentTime,
             });
 
             Object.keys(rowData).forEach((f) => {
-              if (f !== "uploadedOn" && f !== "uploadedBy" && rowData[f] !== undefined) {
+              if (
+                f !== "uploadedOn" &&
+                f !== "uploadedBy" &&
+                rowData[f] !== undefined
+              ) {
                 dataExists[f] = rowData[f];
               }
             });
@@ -3886,13 +3924,9 @@ class SubAdminController {
             updated++;
 
             numericFields.forEach(f => {
-              // Special handling for "duplicate": Do NOT add again if record exists, just keep old usedAssetsDraft. 
-              // Only update "duplicate" if it increases, not add again and again
               if (f === "duplicate") {
-                // Calculate what the previous value was, so usedAssetsDraft should only be increased if higher, or remain as is if lower or same
                 let prevValue = Number(dataExists.history[dataExists.history.length - 1][f] || 0);
                 let newValue = Number(rowData[f] ?? prevValue);
-                // We do not add diff as with other fields, but rather keep max between existing usedAssetsDraft and newValue
                 usedAssetsDraft[f] = Math.max(Number(usedAssetsDraft[f] || 0), newValue);
               } else {
                 const oldVal = Number(dataExists.history[dataExists.history.length - 1][f] || 0);
@@ -3945,10 +3979,8 @@ class SubAdminController {
           usedAssetsO.history.push({ changedOn: new Date() });
         }
 
-        // Handle duplicate field correctly in usedAssetsO
         numericFields.forEach(f => {
           if (f === "duplicate") {
-            // For duplicate: UsedAssets should NOT be incremented, only set to max(usedAssetsDraft.duplicate, usedAssetsO.duplicate)
             usedAssetsO[f] = Math.max(Number(usedAssetsDraft[f] || 0), Number(usedAssetsO[f] || 0));
           } else {
             usedAssetsO[f] = usedAssetsDraft[f] || 0;
